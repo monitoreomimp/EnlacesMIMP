@@ -219,7 +219,7 @@ const CONFIG = {
     gobernador: BASE + '353378163',
     poblacion:  BASE + '1109551559',
     servicios:  BASE + '806903940',
-    iconos:     ''   // hoja Iconos: columnas Indicador | Icono. Pega aquí su enlace TSV.
+    iconos:     BASE + '395452209'   // hoja Iconos: Indicador | Icono
   },
   CAMPOS: {
     gobernador: {
@@ -324,7 +324,7 @@ async function loadData(){
     ICONS = {};
     raw.replace(/\r\n?/g,'\n').split('\n').slice(1).forEach(l => {
       const [k, f] = l.split('\t').map(v => (v||'').trim().replace(/^"|"$/g,''));
-      if (has(k) && has(f)) ICONS[norm(k)] = /^https?:\/\//i.test(f) ? f : pathUrl(CONFIG.CARPETA_ICONOS, f);
+      if (has(k) && has(f)) ICONS[norm(k)] = /^https?:\/\//i.test(f) ? [f] : [...new Set([f.normalize('NFC'), f.normalize('NFD')])].map(v => pathUrl(CONFIG.CARPETA_ICONOS, v));
     });
   }).catch(() => {}) : Promise.resolve();
   const raws = await Promise.all(names.map(k => fetchText(CONFIG.HOJAS[k]).then(r => [k, r]).catch(e => [k, null, e])));
@@ -354,7 +354,8 @@ async function loadData(){
 }
 const fuente = k => CONFIG.FUENTES[k] || '';
 // Íconos: el nombre de la columna Indicador de la hoja Iconos
-const icon = (name, cls='ic') => ICONS[norm(name)] ? `<img class="${cls}" src="${ICONS[norm(name)]}" alt="" onerror="this.remove()">` : '';
+const icon = (name, cls='ic') => { const u = ICONS[norm(name)]; if (!u) return '';
+  return `<img class="${cls}" src="${u[0]}" data-alt="${u[1]||''}" alt="" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.dataset.alt=''}else{this.remove()}">`; };
 const withIcon = (name, html) => { const i = icon(name); return i ? `<div class="with-ic">${i}<div>${html}</div></div>` : html; };
 const srcLine = k => fuente(k) ? `<div class="src">Fuente: ${esc(fuente(k))}</div>` : '';
 
