@@ -32,6 +32,10 @@ body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-
 .btn.primary{background:var(--red);border-color:var(--red);color:#fff}
 .btn.primary:hover{background:var(--red-dk)}
 .btn:disabled{opacity:.5;cursor:wait}
+label.btn{display:inline-flex;align-items:center}
+.src-info{font-size:12.5px;color:var(--ink-2);padding:8px 28px;background:#fff;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.src-info button{border:none;background:none;color:var(--red);font:600 12.5px var(--sans);cursor:pointer;padding:0}
+@media print{.src-info{display:none!important}}
 .btn:focus-visible,.ctrl select:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
 .status{font-size:13px;color:var(--ink-2);padding:10px 28px;background:#FFF8E5;border-bottom:1px solid #F1E2B5;display:none}
 .status.show{display:block}
@@ -196,18 +200,47 @@ hr.sep{border:none;border-top:1px solid var(--line)}
 
 <script>
 // ══════════════════════════════════════════════════════════════
-//  CONFIGURACIÓN — pega aquí los enlaces TSV publicados del Sheet.
-//  Si se dejan vacíos, la página usa los datos de ejemplo (Apurímac).
+//  CONFIGURACIÓN
+//  HOJAS: enlaces TSV publicados del Google Sheet. La primera columna
+//  de cada hoja debe ser la región (Departamento / Región).
+//  CAMPOS: qué encabezado del Sheet alimenta cada dato del resumen.
+//  Si cambias un encabezado en el Sheet, cámbialo también aquí.
 // ══════════════════════════════════════════════════════════════
+const BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJCiQn043FqK5zpdzJ2LacMQVO80RyGzQFSDyc5_x_07VeLCNjO9EfN4pvKu3enw/pub?single=true&output=tsv&gid=';
 const CONFIG = {
-  URL_REGIONES:  '',
-  URL_SERVICIOS: '',
-  URL_FUENTES:   '',
-  CARPETA_IMAGENES: 'imagenes/'
+  CARPETA_IMAGENES: 'imagenes/',
+  HOJAS: {
+    gobernador: BASE + '353378163',
+    poblacion:  BASE + '1109551559',
+    servicios:  BASE + '806903940'
+  },
+  CAMPOS: {
+    gobernador: {
+      gob_link:'Enlaces',
+      gob_cargo:'Título', gob_nombre:'Nombres y Apellidos', gob_nacimiento:'Fecha de Nacimiento', gob_estudios:'Estudios',
+      gob_partido:'Organización Política', gob_sent_penales:'Sentencias - Delitos', gob_sent_civiles:'Sentencias - Demandas',
+      vgob_cargo:'Título2', vgob_nombre:'Nombres y Apellidos2', vgob_nacimiento:'Fecha de Nacimiento2', vgob_estudios:'Estudios2',
+      vgob_partido:'Organización Política2', vgob_sent_penales:'Sentencias - Delitos2', vgob_sent_civiles:'Sentencias - Demandas2'
+    },
+    poblacion: {
+      pob_total:'Población Censada', pob_mujer:'Mujer', pob_hombre:'Hombre', pob_discapacidad:'Poblacion con discapacidad',
+      pob_0_5:'Primera Infancia', pob_6_11:'Infancia', pob_12_17:'Adolescente', pob_18_29:'Juventud', pob_30_59:'Adulto', pob_60_mas:'Adultos mayores',
+      pct_mujer:'Mujer %', pct_hombre:'Hombre %', pct_discapacidad:'Discapacidad %', pct_0_5:'Prim. Infancia %', pct_6_11:'Infancia %',
+      pct_12_17:'Adolescente %', pct_18_29:'Juventud %', pct_30_59:'Adulto %', pct_60_mas:'Adulto Mayor %'
+    },
+    servicios: {
+      periodo:'periodo',
+      cem_reg_n:'CEMreg-nro', cem_reg_at:'CEMreg-atenciones', cem24_n:'CEM24-nro', cem24_at:'CEM24-atenciones', cem_total_at:'Total de atenciones',
+      hrt_n:'HRT_nro', hrt_at:'hrt_atendidos', upe_n:'UPE_nro', pcd_centros:'Centros Discapacitados',
+      beneficencias:'Sociedades', juguemos:'Juguemos', ponte_modo_ninez:'Estrategias', demuna:'Demuna_Nro', ciam:'CIAM_nro'
+    }
+  },
+  FUENTES: {
+    autoridades: 'Infogob - Jurado Nacional de Elecciones',
+    poblacion: 'INEI - Censo 2025. Elaborado: OGMEPGD',
+    servicios: 'OGMEPGD'
+  }
 };
-
-const DEMO = {"regiones": "region\tcorte\tfoto_portada\tmapa\tprovincias\tdistritos\tgob_cargo\tgob_nombre\tgob_foto\tgob_nacimiento\tgob_estudios\tgob_partido\tgob_sent_penales\tgob_sent_civiles\tvgob_cargo\tvgob_nombre\tvgob_foto\tvgob_nacimiento\tvgob_estudios\tvgob_partido\tvgob_sent_penales\tvgob_sent_civiles\tpob_total\tpob_mujer\tpob_hombre\tpob_discapacidad\tpob_0_5\tpob_6_11\tpob_12_17\tpob_18_29\tpob_30_59\tpob_60_mas\ttrab_inf_mujer\ttrab_inf_hombre\tjefas_hogar\tanalf_mujer\tanalf_hombre\talcaldesas\tactividades\tviolencia_mujer\tembarazo_adol\tfeminicidio\tnna_riesgo\tam_discriminacion\tpcd_discriminacion\tdemuna\tdemuna_acreditadas\tjuguemos\tponte_modo_ninez\toredis\tciam\tbeneficencias\tn_servicios\tn_centros\tregistro_pcd\tlinea100\tchat100\tvictimas_indirectas\torfandad\tupe_total\tupe_riesgo\tupe_desproteccion\tupe_sexual\tupe_fisica\tupe_psicologica\tupe_0_5\tupe_6_11\tupe_12_17\nNACIONAL\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t49.1%\t7.38%\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\t\nApurímac\tAl cierre de agosto 2026\tapurimac_portada.jpg\tapurimac_mapa.png\t7\t84\tGobernador Regional\tPercy Godoy Medina\t\t23/09/1980\tEstudios universitarios no concluidos\tPartido Frente de la Esperanza 2021\tNo tiene\tNo tiene\tVicegobernadora Regional\tMarisol Valer Miranda\t\t16/02/1974\tLicenciada en Enfermería\tPartido Frente de la Esperanza 2021\tNo tiene\tNo tiene\t445442\t227250\t218192\t29209\t37051\t46296\t47587\t74338\t169315\t70855\t46.9%\t53.9%\t34.9%\t16.45%\t10.65%\t4\tAgricultura y minería\t66.1%\t11.6%\t0\t51620\t4.14%\t6.46%\t76\t20\t1\t8\t1\t82\t3\t9\t\t750\t1025\t22\t22\t2227\t35\t22\t13\t2\t20\t31\t9\t13\t13", "servicios": "Región\tProvincia\tCategoría\tGrupo\tServicio\tCentros\tAtenciones\nApurímac\tAbancay\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - Regular\t1\t827\nApurímac\tAndahuaylas\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - Regular\t1\t\nApurímac\tAntabamba\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - Regular\t1\t\nApurímac\tAymaraes\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - Regular\t1\t\nApurímac\tChincheros\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - Regular\t1\t\nApurímac\tCotabambas\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - Regular\t1\t\nApurímac\tGrau\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - Regular\t1\t\nApurímac\tAbancay\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - 24 horas\t3\t1155\nApurímac\tAndahuaylas\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - 24 horas\t1\t\nApurímac\tAymaraes\tViolencia\tCentros Emergencia Mujer y Familia\tCentro Emergencia Mujer y Familia - 24 horas\t1\t\nApurímac\tChincheros\tViolencia\tOtros servicios\tHogar de Refugio Temporal (HRT)\t1\t61\nApurímac\tChincheros\tViolencia\tOtros servicios\tServicio de Atención Rural (SAR)\t1\t163\nApurímac\tAndahuaylas\tViolencia\tOtros servicios\tServicio de Atención Rural (SAR)\t1\t\nApurímac\tCotabambas\tViolencia\tOtros servicios\tServicio de Atención Rural (SAR)\t1\t\nApurímac\tAbancay\tViolencia\tOtros servicios\tUnidad de Coordinación Territorial\t1\t\nApurímac\tAbancay\tNNA\t\tUnidad de Protección Especial (UPE)\t1\t141\nApurímac\tAbancay\tNNA\t\tEducadores de Calle\t4\t260", "fuentes": "Clave\tFuente\npoblacion\tINEI - Censo 2025. Elaborado: OGMEPGD\nautoridades\t\ntrabajo_infantil\tEnaho 2025. Elaboración propia\njefas_hogar\tEnaho 2025. Elaboración propia\nanalfabetismo\tEnaho 2025\nalcaldesas\tINEI 2026\nviolencia_mujer\tEndes 2025\nembarazo_adol\tEndes 2025. Elaboración propia\nfeminicidio\tPN Warmi Ñan - ago 2026\nnna_riesgo\tEnares 2024. Elaboración propia\nam_discriminacion\tEnaho 2025. Elaboración propia\npcd_discriminacion\tEnaho 2025. Elaboración propia\nservicios\tCorte Ene - Ago. 2026 - Fuente: OGMEPGD\nupe\t"};
-
 // ── Utilidades ──
 const $ = id => document.getElementById(id);
 const norm = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
@@ -226,6 +259,7 @@ function fmtP(v){
   const p = Math.abs(n) <= 1 ? n*100 : n;
   return (+p.toFixed(2)).toString() + '%';
 }
+function pctNum(v){ const s = String(v).replace(',','.'); const n = parseFloat(s); if (isNaN(n)) return null; return s.includes('%') || Math.abs(n) > 1 ? n : n*100; }
 function share(part,total){ if(part==null||!total) return null; return part/total*100; }
 function pTxt(p){ return p==null ? '—' : (+p.toFixed(1)).toString() + '%'; }
 function imgSrc(v){ return /^https?:\/\//i.test(v) ? v : CONFIG.CARPETA_IMAGENES + encodeURIComponent(v); }
@@ -261,45 +295,71 @@ async function fetchText(url){
 function status(msg, err=false){ const s=$('status'); s.textContent=msg||''; s.className='status'+(msg?' show':'')+(err?' err':''); }
 
 // ── Datos ──
-let REGIONES = [], NACIONAL = {}, SERVICIOS = [], FUENTES = {}, SYMBOLS = {};
+let REGIONES = [], NACIONAL = {};
 
-const SHAPES = [
-  ['diamond','#FF1A1A'],['circle','#00AEEF'],['triangle','#D4D924'],['square','#7F3FE0'],
-  ['dot','#1F2430'],['triangle','#1F2430'],['square-o','#C8601A'],['circle','#3FA34D'],
-  ['diamond','#7F3FE0'],['square','#F2A900'],['triangle','#C2185B'],['circle-o','#3B2E7E']
-];
-function symbolSvg(name){
-  const [shape,color] = SYMBOLS[name] || ['dot','#7A8392'];
+// Símbolos de los servicios (mismos colores que el mapa)
+const SYMBOLS = { cem_reg:['diamond','#FF1A1A'], cem24:['circle','#00AEEF'], hrt:['triangle','#D4D924'], upe:['triangle','#1F2430'], pcd:['square','#7F3FE0'] };
+function symbolSvg(key){
+  const [shape,color] = SYMBOLS[key] || ['dot','#7A8392'];
   const p = {
     'diamond':`<path d="M6 .8 11.2 6 6 11.2.8 6z" fill="${color}"/>`,
     'circle':`<circle cx="6" cy="6" r="5" fill="${color}"/>`,
-    'circle-o':`<circle cx="6" cy="6" r="4.2" fill="none" stroke="${color}" stroke-width="1.6"/>`,
     'dot':`<circle cx="6" cy="6" r="4.4" fill="${color}"/>`,
     'triangle':`<path d="M6 .8 11.4 11H.6z" fill="${color}"/>`,
-    'square':`<rect x="1" y="1" width="10" height="10" fill="${color}"/>`,
-    'square-o':`<rect x="1.8" y="1.8" width="8.4" height="8.4" fill="none" stroke="${color}" stroke-width="1.8"/>`
+    'square':`<rect x="1" y="1" width="10" height="10" fill="${color}"/>`
   }[shape];
   return `<svg viewBox="0 0 12 12">${p}</svg>`;
 }
 
 async function loadData(){
-  const demo = !CONFIG.URL_REGIONES;
-  const get = async (url, key) => url ? fetchText(url) : DEMO[key];
-  const [r, s, f] = await Promise.all([
-    get(CONFIG.URL_REGIONES,'regiones'),
-    get(CONFIG.URL_SERVICIOS,'servicios').catch(()=> ''),
-    get(CONFIG.URL_FUENTES,'fuentes').catch(()=> '')
-  ]);
-  const rows = parseTSV(r).filter(x => has(x.region));
-  NACIONAL = rows.find(x => norm(x.region)==='nacional') || {};
-  REGIONES = rows.filter(x => norm(x.region)!=='nacional');
-  SERVICIOS = parseTSV(s).filter(x => has(x.region) && has(x.servicio));
-  FUENTES = {}; parseTSV(f).forEach(x => { if(has(x.clave)) FUENTES[norm(x.clave)] = x.fuente||''; });
-  SYMBOLS = {}; [...new Set(SERVICIOS.map(x => x.servicio))].forEach((n,i) => SYMBOLS[n] = SHAPES[i % SHAPES.length]);
-  return demo;
+  const names = Object.keys(CONFIG.HOJAS);
+  const raws = await Promise.all(names.map(k => fetchText(CONFIG.HOJAS[k]).then(r => [k, r]).catch(e => [k, null, e])));
+  const failed = raws.filter(x => x[1] === null).map(x => x[0]);
+  const byKey = {}; const order = [];
+  raws.forEach(([hoja, raw]) => {
+    if (!raw) return;
+    const lines = raw.replace(/\r\n?/g,'\n').split('\n').filter(l => l.replace(/\t/g,'').trim());
+    if (!lines.length) return;
+    const head = lines[0].split('\t').map(norm);
+    const map = CONFIG.CAMPOS[hoja] || {};
+    lines.slice(1).forEach(l => {
+      const c = l.split('\t').map(v => (v||'').trim().replace(/^"|"$/g,''));
+      if (!has(c[0])) return;
+      const key = norm(c[0]);
+      if (!byKey[key]){ byKey[key] = { region: c[0] }; order.push(key); }
+      const R = byKey[key];
+      // Nombre para mostrar: se prefiere el que tiene tildes y mayúsculas/minúsculas
+      if (c[0] !== c[0].toUpperCase() && R.region === R.region.toUpperCase()) R.region = c[0];
+      Object.entries(map).forEach(([code, header]) => { const i = head.indexOf(norm(header)); if (i >= 0 && has(c[i])) R[code] = c[i]; });
+    });
+  });
+  NACIONAL = byKey['nacional'] || {};
+  REGIONES = order.filter(k => k !== 'nacional').map(k => byKey[k]);
+  return failed;
 }
-const fuente = k => FUENTES[norm(k)] || '';
+const fuente = k => CONFIG.FUENTES[k] || '';
 const srcLine = k => fuente(k) ? `<div class="src">Fuente: ${esc(fuente(k))}</div>` : '';
+
+// "Ene - Set 2026" → "Al cierre de setiembre 2026"
+const MESES = {ene:'enero',feb:'febrero',mar:'marzo',abr:'abril',may:'mayo',jun:'junio',jul:'julio',ago:'agosto',set:'setiembre',sep:'setiembre',oct:'octubre',nov:'noviembre',dic:'diciembre'};
+function corte(periodo){
+  if (!has(periodo)) return '';
+  const m = norm(periodo).match(/-\s*([a-z]{3})[a-z]*\.?\s*(\d{4})/);
+  return m && MESES[m[1]] ? `Al cierre de ${MESES[m[1]]} ${m[2]}` : periodo;
+}
+
+// Imágenes por convención: imagenes/<region>_portada.jpg y imagenes/<region>_mapa.png
+const IMG_CACHE = {};
+function probe(file){
+  if (!(file in IMG_CACHE)) IMG_CACHE[file] = new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => res(false); i.src = CONFIG.CARPETA_IMAGENES + file; });
+  return IMG_CACHE[file];
+}
+const fileBase = R => norm(R.region).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+async function resolveImages(R){
+  const b = fileBase(R);
+  for (const ext of ['jpg','jpeg','png','webp']) if (await probe(`${b}_portada.${ext}`)) { R._portada = `${b}_portada.${ext}`; break; }
+  for (const ext of ['png','jpg','jpeg','webp']) if (await probe(`${b}_mapa.${ext}`)) { R._mapa = `${b}_mapa.${ext}`; break; }
+}
 
 // ── Piezas comunes ──
 const stripe = () => `<div class="stripe"><i></i><i></i><i></i><i></i><i></i></div>`;
@@ -321,10 +381,10 @@ function pageCover(R){
       <div class="cover-logo"><img src="${CONFIG.CARPETA_IMAGENES}logo_mimp.png" alt="MIMP"></div>
       <div class="cover-kicker">RESUMEN ESTADÍSTICO</div>
       <div class="cover-name">Región ${esc(R.region)}</div>
-      ${has(R.foto_portada) ? `<div class="cover-photo"><div class="ph" style="${bg(R.foto_portada)}" role="img" aria-label="Paisaje de ${esc(R.region)}"></div></div>` : ''}
+      ${R._portada ? `<div class="cover-photo"><div class="ph" style="${bg(R._portada)}" role="img" aria-label="Paisaje de ${esc(R.region)}"></div></div>` : ''}
       <div class="cover-meta">
         <div class="cover-org">Ministerio de la Mujer y<br>Poblaciones Vulnerables</div>
-        ${has(R.corte) ? `<div class="cover-corte">${esc(R.corte)}</div>` : ''}
+        ${has(R.periodo) ? `<div class="cover-corte">${esc(corte(R.periodo))}</div>` : ''}
       </div>
     </div>
     <div class="cover-bottom">
@@ -346,7 +406,7 @@ function authority(R, p, defCargo){
   const foto = has(R[p+'_foto']);
   return `<div class="authority${foto?'':' no-photo'}">
     ${foto ? `<div class="auth-photo"><div class="ph" style="${bg(R[p+'_foto'])}" role="img" aria-label="${esc(R[p+'_nombre'])}"></div></div>` : ''}
-    <div><div class="auth-role">${esc(cargo)} de ${esc(R.region)}</div>
+    <div><div class="auth-role">${esc(cargo.replace(/\.$/,''))} de ${esc(R.region)}</div>
       <div class="auth-name">${esc(R[p+'_nombre'])}</div>
       <dl class="auth-list">${items.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     </div></div>`;
@@ -361,10 +421,11 @@ function pageAuthorities(R, n){
 // ── Página 3: perfil territorial ──
 function pageProfile(R, n){
   const T = num(R.pob_total);
+  const hasInd = ['trab_inf_mujer','trab_inf_hombre','jefas_hogar','analf_mujer','analf_hombre','alcaldesas','actividades'].some(k => has(R[k]));
   const groups = [
-    ['Mujer','pob_mujer','#7A45E0'],['Hombre','pob_hombre','#7A45E0'],['Población con<br>discapacidad','pob_discapacidad','#F0616D'],
-    ['Primera infancia<br>(0 a 5)','pob_0_5','#F2A900'],['Infancia<br>(6 a 11)','pob_6_11','#F2A900'],['Adolescentes<br>(12 a 17)','pob_12_17','#F2A900'],
-    ['Juventud<br>(18 a 29)','pob_18_29','#F2A900'],['Adulto<br>(30 a 59)','pob_30_59','#F2A900'],['Adultos mayores<br>(60 a más)','pob_60_mas','#F2A900']
+    ['Mujer','pob_mujer','#7A45E0','pct_mujer'],['Hombre','pob_hombre','#7A45E0','pct_hombre'],['Población con<br>discapacidad','pob_discapacidad','#F0616D','pct_discapacidad'],
+    ['Primera infancia<br>(0 a 5)','pob_0_5','#F2A900','pct_0_5'],['Infancia<br>(6 a 11)','pob_6_11','#F2A900','pct_6_11'],['Adolescentes<br>(12 a 17)','pob_12_17','#F2A900','pct_12_17'],
+    ['Juventud<br>(18 a 29)','pob_18_29','#F2A900','pct_18_29'],['Adulto<br>(30 a 59)','pob_30_59','#F2A900','pct_30_59'],['Adultos mayores<br>(60 a más)','pob_60_mas','#F2A900','pct_60_mas']
   ].filter(g => has(R[g[1]]));
   const prob = [
     ['violencia_mujer','Violencia familiar contra la mujer**', true],
@@ -390,9 +451,9 @@ function pageProfile(R, n){
     <div class="cols divided">
       <div class="col">
         <div><span class="h2">Población censada</span>${T?`<div class="pop-total">${fmtN(T)} habitantes</div>`:''}</div>
-        <div class="donuts">${groups.map(([l,k,c]) => `<div class="donut">${donut(share(num(R[k]),T),c)}<div class="donut-lbl">${l}</div><div class="donut-n">(${nTxt(R[k])})</div></div>`).join('')}</div>
+        <div class="donuts">${groups.map(([l,k,c,pk]) => `<div class="donut">${donut(has(R[pk]) ? pctNum(R[pk]) : share(num(R[k]),T),c)}<div class="donut-lbl">${l}</div><div class="donut-n">(${nTxt(R[k])})</div></div>`).join('')}</div>
         ${srcLine('poblacion')}
-        <div><span class="h2">Indicadores</span></div>
+        ${hasInd ? `<div><span class="h2">Indicadores</span></div>
         <div class="ind-grid">
           ${pair('Trabajo infantil','trab_inf_mujer','trab_inf_hombre','trabajo_infantil')}
           ${single('jefas_hogar','Mujeres jefas de hogar')}
@@ -400,7 +461,7 @@ function pageProfile(R, n){
           ${single('alcaldesas','Mujeres en cargos políticos (alcaldesas)', true)}
           ${has(R.actividades) ? `<div class="ind" style="grid-column:1/-1"><div class="k">${esc(R.actividades)}</div><div class="lbl">Principales actividades económicas</div></div>`:''}
         </div>
-        <div class="note">(*) Porcentaje calculado respecto al total poblacional de su mismo sexo en cada región. Comprende residentes de 15 años a más.</div>
+        ${has(R.analf_mujer)||has(R.analf_hombre) ? '<div class="note">(*) Porcentaje calculado respecto al total poblacional de su mismo sexo en cada región. Comprende residentes de 15 años a más.</div>' : ''}` : ''}
       </div>
       <div class="col">
         ${prob.length ? `<div><span class="h2">Problemática social vinculada al sector</span></div>
@@ -416,57 +477,40 @@ function pageProfile(R, n){
 
 // ── Página 4: servicios implementados ──
 function pageServices(R, n){
-  const rows = SERVICIOS.filter(s => norm(s.region) === norm(R.region));
-  const svcOf = cat => {
-    const list = rows.filter(s => norm(s.categoria) === norm(cat)); const map = {}; const order = [];
-    list.forEach(s => { if(!map[s.servicio]){ map[s.servicio] = {nombre:s.servicio, grupo:s.grupo||'', centros:0, atenciones:0, hasAt:false}; order.push(s.servicio); }
-      const m = map[s.servicio]; m.centros += num(s.centros)||0; if(has(s.atenciones)){ m.atenciones += num(s.atenciones)||0; m.hasAt = true; } });
-    return order.map(k => map[k]);
-  };
-  const tot = list => list.reduce((a,s)=>a+s.atenciones,0);
+  const mk = (key, nKey, atKey, nombre, atLabel='atenciones') => ({key, n:num(R[nKey])||0, at:has(R[atKey]) ? num(R[atKey]) : null, nombre, atLabel});
+  const cem = [mk('cem_reg','cem_reg_n','cem_reg_at','Centros Emergencia Mujer y Familia - Regular'), mk('cem24','cem24_n','cem24_at','Centros Emergencia Mujer y Familia - 24 horas')].filter(s => s.n);
+  const otros = [mk('hrt','hrt_n','hrt_at','Hogar de Refugio Temporal (HRT)','personas atendidas')].filter(s => s.n);
+  const nna = [mk('upe','upe_n',null,'Unidad de Protección Especial (UPE)')].filter(s => s.n);
+  const pcd = [mk('pcd','pcd_centros',null,'Centros de atención a personas con discapacidad')].filter(s => s.n);
+  const all = [...cem, ...otros, ...nna, ...pcd];
+  if (!all.length && !has(R.periodo)) return '';
+  const sumAt = list => list.reduce((a,s) => a + (s.at||0), 0);
   const pad = x => String(x).padStart(2,'0');
-  const legend = list => `<div class="leg">${list.map(s => `${symbolSvg(s.nombre)}<span><b>${pad(s.centros)}</b> ${esc(s.nombre)}${s.hasAt?` (${fmtN(s.atenciones)} atenciones)`:''}</span>`).join('')}</div>`;
-
-  const viol = svcOf('Violencia');
-  const vGroups = []; viol.forEach(s => { let g = vGroups.find(x=>x.g===s.grupo); if(!g){ g={g:s.grupo,items:[]}; vGroups.push(g);} g.items.push(s); });
-  const nna = svcOf('NNA'), am = svcOf('Adultos mayores'), pcd = svcOf('Discapacidad');
-  const nServ = has(R.n_servicios) ? num(R.n_servicios) : new Set(rows.map(s=>s.servicio)).size;
-  const nCent = has(R.n_centros) ? num(R.n_centros) : rows.reduce((a,s)=>a+(num(s.centros)||0),0);
-
-  const provs = {}; const pOrder = [];
-  rows.forEach(s => { const p = s.provincia || 'Sin provincia'; if(!provs[p]){ provs[p]=[]; pOrder.push(p);} for(let i=0;i<(num(s.centros)||0);i++) provs[p].push(s.servicio); });
-
-  const block = (title, list, color, emptyMsg) => `<div class="block"><h3>${title}</h3>${list.length ? `<div class="tot"><span class="big ${color||''}">${fmtN(tot(list))}</span><span>total de atenciones</span></div>${legend(list)}` : `<p class="muted">${emptyMsg}</p>`}</div>`;
+  const legend = list => `<div class="leg">${list.map(s => `${symbolSvg(s.key)}<span><b>${pad(s.n)}</b> ${esc(s.nombre)}${s.at!=null?` (${fmtN(s.at)} ${s.atLabel})`:''}</span>`).join('')}</div>`;
+  const cemTot = has(R.cem_total_at) ? num(R.cem_total_at) : sumAt(cem);
+  const violTot = cemTot + sumAt(otros);
+  const block = (title, list, emptyMsg) => `<div class="block"><h3>${title}</h3>${list.length ? legend(list) : `<p class="muted">${emptyMsg}</p>`}</div>`;
 
   return `<section class="page">${band(R)}<div class="page-body">
-    <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${fuente('servicios')?' (*)':''}</span></div>
-      <div class="svc-counts"><b>${pad(nServ)}</b> servicios MIMP<br><b>${pad(nCent)}</b> centros</div></div>
-    ${has(R.mapa) ? `<div class="map">${img(R.mapa,'Mapa de servicios en '+R.region)}</div>` :
-      (pOrder.length ? `<div class="prov-grid">${pOrder.map(p => `<div class="prov"><span>${esc(p)}</span><span class="sym">${provs[p].map(symbolSvg).join('')}</span></div>`).join('')}</div>` : '')}
+    <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>
+      <div class="svc-counts"><b>${pad(all.length)}</b> servicios MIMP<br><b>${pad(all.reduce((a,s)=>a+s.n,0))}</b> centros</div></div>
+    ${R._mapa ? `<div class="map">${img(R._mapa,'Mapa de servicios en '+R.region)}</div>` : ''}
     <div class="cols divided">
       <div class="col">
         <div class="block"><h3>En atención a la violencia</h3>
-          ${viol.length ? `<div class="tot"><span class="big">${fmtN(tot(viol))}</span><span>total de atenciones</span></div>
-          ${vGroups.map(g => `${g.g?`<div class="sub">${esc(g.g)} (<b>${fmtN(tot(g.items))}</b> atenciones)</div>`:''}${legend(g.items)}`).join('')}` : '<p class="muted">No hay centros de atención a la violencia</p>'}
+          ${cem.length || otros.length ? `<div class="tot"><span class="big">${fmtN(violTot)}</span><span>total de atenciones</span></div>
+            ${cem.length ? `<div class="sub">Centros Emergencia Mujer y Familia (<b>${fmtN(cemTot)}</b> atenciones)</div>${legend(cem)}` : ''}
+            ${otros.length ? `<div class="sub">Otros servicios (<b>${fmtN(sumAt(otros))}</b> ${otros.every(s=>s.atLabel!=='atenciones')?'personas atendidas':'atenciones'})</div>${legend(otros)}` : ''}`
+          : '<p class="muted">No hay centros de atención a la violencia</p>'}
         </div>
-        <hr class="sep">
-        ${block('En personas con discapacidad', pcd, '', 'No hay centros de personas con discapacidad')}
-        ${has(R.registro_pcd) ? `<hr class="sep"><div class="block"><div class="red-h">Registro de Personas con Discapacidad</div>
-          <div class="v" style="font-size:13pt;font-weight:800;color:var(--violet)">${nTxt(R.registro_pcd)}</div><div class="muted">personas inscritas en el Registro Nacional de Personas con Discapacidad</div></div>` : ''}
       </div>
       <div class="col">
-        ${block('En niñas, niños y adolescentes', nna, 'amber', 'No hay centros de atención a niñas, niños y adolescentes')}
+        ${block('En niñas, niños y adolescentes', nna, 'No hay centros de atención a niñas, niños y adolescentes')}
         <hr class="sep">
-        ${block('En adultos mayores', am, '', 'No hay centros de adultos mayores')}
-        ${has(R.linea100)||has(R.chat100) ? `<hr class="sep"><div class="block"><div class="red-h">Servicios de atención multicanal</div><div class="kpi-pair">
-          ${has(R.linea100)?`<div><div class="v">${nTxt(R.linea100)}</div><div class="l">atenciones Línea 100</div></div>`:''}
-          ${has(R.chat100)?`<div><div class="v">${nTxt(R.chat100)}</div><div class="l">atenciones Chat 100</div></div>`:''}</div></div>` : ''}
-        ${has(R.victimas_indirectas)||has(R.orfandad) ? `<div class="block"><div class="red-h">Asistencia económica</div><div class="kpi-pair">
-          ${has(R.victimas_indirectas)?`<div><div class="v">${nTxt(R.victimas_indirectas)}</div><div class="l">atenciones a víctimas indirectas de feminicidio</div></div>`:''}
-          ${has(R.orfandad)?`<div><div class="v">${nTxt(R.orfandad)}</div><div class="l">atenciones por orfandad</div></div>`:''}</div></div>` : ''}
+        ${block('En personas con discapacidad', pcd, 'No hay centros de personas con discapacidad')}
       </div>
     </div>
-    ${fuente('servicios') ? `<div class="note">(*) ${esc(fuente('servicios'))}</div>` : ''}
+    ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
   </div>${footer(R,n)}</section>`;
 }
 
@@ -498,8 +542,9 @@ function buildPages(R){
 
 // ── Vista ──
 const current = () => REGIONES.find(r => slug(r.region) === $('region').value) || REGIONES[0];
-function render(){
+async function render(){
   const R = current(); if(!R) return;
+  await resolveImages(R);
   $('viewer').innerHTML = buildPages(R);
   history.replaceState(null,'','#'+slug(R.region));
 }
@@ -535,7 +580,7 @@ async function downloadAll(){
   try{
     for (let i=0;i<REGIONES.length;i++){
       const R = REGIONES[i]; status(`Generando ${i+1} de ${REGIONES.length}: ${R.region}…`); progress(i/REGIONES.length);
-      off.innerHTML = buildPages(R);
+      await resolveImages(R); off.innerHTML = buildPages(R);
       const pdf = await pagesToPdf(off);
       zip.file(fileName(R), pdf.output('arraybuffer'));
     }
@@ -548,18 +593,19 @@ async function downloadAll(){
 
 // ── Inicio ──
 (async function init(){
+  $('region').addEventListener('change', render);
+  $('btnPdf').addEventListener('click', downloadOne);
+  $('btnZip').addEventListener('click', downloadAll);
+  $('btnPrint').addEventListener('click', () => window.print());
+  status('Cargando datos del Google Sheet…');
   try{
-    const demo = await loadData();
-    if(!REGIONES.length) throw new Error('la hoja Regiones no tiene filas con región');
+    const failed = await loadData();
+    if(!REGIONES.length) throw new Error('ninguna hoja respondió con regiones');
     const sel = $('region');
     sel.innerHTML = REGIONES.map(r => `<option value="${slug(r.region)}">${esc(r.region)}</option>`).join('');
     const h = location.hash.slice(1); if (REGIONES.some(r => slug(r.region)===h)) sel.value = h;
-    sel.addEventListener('change', render);
-    $('btnPdf').addEventListener('click', downloadOne);
-    $('btnZip').addEventListener('click', downloadAll);
-    $('btnPrint').addEventListener('click', () => window.print());
-    busy(false); render();
-    if (demo) status('Mostrando datos de ejemplo. Para usar el Google Sheet, pega los enlaces TSV en CONFIG al inicio del código.');
+    busy(false); await render();
+    status(failed.length ? 'No se pudo leer la hoja: ' + failed.join(', ') + '. El resumen se muestra sin esos datos.' : '', failed.length > 0);
   }catch(e){ status('No se pudieron cargar los datos del Sheet (' + e.message + '). Revisa que las hojas estén publicadas como TSV.', true); }
 })();
 </script>
