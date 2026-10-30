@@ -209,6 +209,7 @@ hr.sep{border:none;border-top:1px solid var(--line)}
 const BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJCiQn043FqK5zpdzJ2LacMQVO80RyGzQFSDyc5_x_07VeLCNjO9EfN4pvKu3enw/pub?single=true&output=tsv&gid=';
 const CONFIG = {
   CARPETA_IMAGENES: 'imagenes/',
+  CARPETA_PORTADAS: 'Fotos Regiones/',   // archivo = nombre de la región tal como está en el Sheet (ej. Apurímac.png)
   HOJAS: {
     gobernador: BASE + '353378163',
     poblacion:  BASE + '1109551559',
@@ -348,17 +349,24 @@ function corte(periodo){
   return m && MESES[m[1]] ? `Al cierre de ${MESES[m[1]]} ${m[2]}` : periodo;
 }
 
-// Imágenes por convención: imagenes/<region>_portada.jpg y imagenes/<region>_mapa.png
+// Portadas: Fotos Regiones/<Región>.png  ·  Mapas: imagenes/<region>_mapa.png
 const IMG_CACHE = {};
-function probe(file){
-  if (!(file in IMG_CACHE)) IMG_CACHE[file] = new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => res(false); i.src = CONFIG.CARPETA_IMAGENES + file; });
-  return IMG_CACHE[file];
+const pathUrl = (folder, file) => folder.split('/').filter(Boolean).map(encodeURIComponent).join('/') + '/' + encodeURIComponent(file);
+function probe(url){
+  if (!(url in IMG_CACHE)) IMG_CACHE[url] = new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => res(false); i.src = url; });
+  return IMG_CACHE[url];
+}
+async function firstExisting(folder, names){
+  for (const n of names) { const u = pathUrl(folder, n); if (await probe(u)) return u; }
+  return null;
 }
 const fileBase = R => norm(R.region).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
 async function resolveImages(R){
-  const b = fileBase(R);
-  for (const ext of ['jpg','jpeg','png','webp']) if (await probe(`${b}_portada.${ext}`)) { R._portada = `${b}_portada.${ext}`; break; }
-  for (const ext of ['png','jpg','jpeg','webp']) if (await probe(`${b}_mapa.${ext}`)) { R._mapa = `${b}_mapa.${ext}`; break; }
+  if (R._img) return; R._img = true;
+  const name = R.region.trim();
+  const variants = [...new Set([name.normalize('NFC'), name.normalize('NFD')])];
+  R._portada = await firstExisting(CONFIG.CARPETA_PORTADAS, variants.flatMap(v => ['png','jpg','jpeg','webp'].map(e => `${v}.${e}`)));
+  R._mapa = await firstExisting(CONFIG.CARPETA_IMAGENES, ['png','jpg','jpeg','webp'].map(e => `${fileBase(R)}_mapa.${e}`));
 }
 
 // ── Piezas comunes ──
@@ -381,7 +389,7 @@ function pageCover(R){
       <div class="cover-logo"><img src="${CONFIG.CARPETA_IMAGENES}logo_mimp.png" alt="MIMP"></div>
       <div class="cover-kicker">RESUMEN ESTADÍSTICO</div>
       <div class="cover-name">Región ${esc(R.region)}</div>
-      ${R._portada ? `<div class="cover-photo"><div class="ph" style="${bg(R._portada)}" role="img" aria-label="Paisaje de ${esc(R.region)}"></div></div>` : ''}
+      ${R._portada ? `<div class="cover-photo"><div class="ph" style="background-image:url('${R._portada}')" role="img" aria-label="Paisaje de ${esc(R.region)}"></div></div>` : ''}
       <div class="cover-meta">
         <div class="cover-org">Ministerio de la Mujer y<br>Poblaciones Vulnerables</div>
         ${has(R.periodo) ? `<div class="cover-corte">${esc(corte(R.periodo))}</div>` : ''}
@@ -494,7 +502,7 @@ function pageServices(R, n){
   return `<section class="page">${band(R)}<div class="page-body">
     <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>
       <div class="svc-counts"><b>${pad(all.length)}</b> servicios MIMP<br><b>${pad(all.reduce((a,s)=>a+s.n,0))}</b> centros</div></div>
-    ${R._mapa ? `<div class="map">${img(R._mapa,'Mapa de servicios en '+R.region)}</div>` : ''}
+    ${R._mapa ? `<div class="map"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : ''}
     <div class="cols divided">
       <div class="col">
         <div class="block"><h3>En atención a la violencia</h3>
