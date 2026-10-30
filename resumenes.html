@@ -97,6 +97,11 @@ label.btn{display:inline-flex;align-items:center}
 .title-c h2{font-size:17pt;color:var(--violet);font-weight:700}
 .title-c p{font-size:15pt;color:var(--violet);margin-top:2mm}
 .title-c b{font-weight:500}
+.title-c .reg{font-size:11pt;color:var(--ink-2);margin-top:1.5mm}
+.band-sub{font-size:10pt;font-weight:500;letter-spacing:.02em;margin-top:1mm;opacity:.9}
+.cover-sub{font-size:14pt;font-weight:500;margin-top:-2mm}
+.lvl-note{align-self:flex-start;display:inline-block;background:#FFF4D6;color:#7A5A00;font-size:7.8pt;font-weight:600;padding:1mm 2.5mm;border-radius:1mm}
+.ctrl select.sm{min-width:160px}
 .pop-total{font-size:17pt;color:var(--violet);margin-top:2mm}
 .donuts{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm 2mm}
 .donut{display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
@@ -191,8 +196,10 @@ hr.sep{border:none;border-top:1px solid var(--line)}
   </div>
   <div class="ctrl">
     <select id="region" aria-label="Región" disabled><option>Cargando regiones…</option></select>
+    <select id="prov" class="sm" aria-label="Provincia" disabled><option>Provincia</option></select>
+    <select id="dist" class="sm" aria-label="Distrito" disabled><option>Distrito</option></select>
     <button class="btn primary" id="btnPdf" disabled>Descargar PDF</button>
-    <button class="btn" id="btnZip" disabled>Descargar todas (ZIP)</button>
+    <button class="btn" id="btnZip" disabled>Todas las regiones (ZIP)</button>
     <button class="btn" id="btnPrint" disabled>Imprimir</button>
   </div>
 </header>
@@ -330,27 +337,82 @@ async function loadData(){
   const raws = await Promise.all(names.map(k => fetchText(CONFIG.HOJAS[k]).then(r => [k, r]).catch(e => [k, null, e])));
   const failed = raws.filter(x => x[1] === null).map(x => x[0]);
   const byKey = {}; const order = [];
+  const regionOf = name => {
+    const key = norm(name);
+    if (!byKey[key]){ byKey[key] = { region: name, _subs: {}, _subOrder: [] }; order.push(key); }
+    const R = byKey[key];
+    // Nombre para mostrar: se prefiere el que tiene tildes y mayúsculas/minúsculas
+    if (name !== name.toUpperCase() && R.region === R.region.toUpperCase()) R.region = name;
+    return R;
+  };
   raws.forEach(([hoja, raw]) => {
     if (!raw) return;
     const lines = raw.replace(/\r\n?/g,'\n').split('\n').filter(l => l.replace(/\t/g,'').trim());
     if (!lines.length) return;
     const head = lines[0].split('\t').map(norm);
+    const iProv = head.indexOf('provincia'), iDist = head.indexOf('distrito');
     const map = CONFIG.CAMPOS[hoja] || {};
     lines.slice(1).forEach(l => {
       const c = l.split('\t').map(v => (v||'').trim().replace(/^"|"$/g,''));
       if (!has(c[0])) return;
-      const key = norm(c[0]);
-      if (!byKey[key]){ byKey[key] = { region: c[0] }; order.push(key); }
-      const R = byKey[key];
-      // Nombre para mostrar: se prefiere el que tiene tildes y mayúsculas/minúsculas
-      if (c[0] !== c[0].toUpperCase() && R.region === R.region.toUpperCase()) R.region = c[0];
-      Object.entries(map).forEach(([code, header]) => { const i = head.indexOf(norm(header)); if (i >= 0 && has(c[i])) R[code] = c[i]; });
+      const R = regionOf(c[0]);
+      const prov = iProv >= 0 ? c[iProv] : '', dist = iDist >= 0 ? c[iDist] : '';
+      let target = R;
+      if (has(prov) || has(dist)){
+        const pk = norm(prov) || '-';
+        if (!R._subs[pk]){ R._subs[pk] = { nombre: prov || 'Sin provincia', rec: {}, dists: {}, distOrder: [] }; R._subOrder.push(pk); }
+        const P = R._subs[pk]; target = P.rec;
+        if (has(dist)){
+          const dk = norm(dist);
+          if (!P.dists[dk]){ P.dists[dk] = { nombre: dist, rec: {} }; P.distOrder.push(dk); }
+          target = P.dists[dk].rec;
+        }
+      }
+      Object.entries(map).forEach(([code, header]) => { const i = head.indexOf(norm(header)); if (i >= 0 && has(c[i])) target[code] = c[i]; });
     });
+  });
+  // Si falta el total de un nivel, se suma desde el nivel inferior
+  const sumUp = (dest, list) => {
+    if (has(dest.pob_total) || !list.length) return;
+    POB_SUM.forEach(k => { const vals = list.map(r => num(r[k])).filter(v => v != null); if (vals.length) dest[k] = String(vals.reduce((a,b)=>a+b,0)); });
+  };
+  Object.values(byKey).forEach(R => {
+    R._subOrder.forEach(pk => { const P = R._subs[pk]; sumUp(P.rec, P.distOrder.map(dk => P.dists[dk].rec)); });
+    sumUp(R, R._subOrder.map(pk => R._subs[pk].rec));
+    R._nProv = R._subOrder.filter(pk => pk !== '-').length;
+    R._nDist = R._subOrder.reduce((a,pk) => a + R._subs[pk].distOrder.length, 0);
   });
   await iconsP;
   NACIONAL = byKey['nacional'] || {};
   REGIONES = order.filter(k => k !== 'nacional').map(k => byKey[k]);
   return failed;
+}
+const POB_SUM = ['pob_total','pob_mujer','pob_hombre','pob_discapacidad','pob_0_5','pob_6_11','pob_12_17','pob_18_29','pob_30_59','pob_60_mas'];
+
+// Vista de una región, provincia o distrito: hereda los datos regionales y
+// reemplaza los que existen a ese nivel (_local).
+function buildView(Rg, pk, dk){
+  const V = Object.assign({}, Rg);
+  V._region = Rg; V._tipo = 'Región'; V._nombre = Rg.region; V._local = null;
+  const P = pk ? Rg._subs[pk] : null;
+  if (P){
+    const D = dk ? P.dists[dk] : null;
+    const rec = D ? D.rec : P.rec;
+    // los porcentajes regionales no sirven para otro nivel
+    Object.keys(V).forEach(k => { if (k.startsWith('pct_') && !(k in rec)) delete V[k]; });
+    Object.assign(V, rec);
+    V._local = new Set(Object.keys(rec));
+    V._tipo = D ? 'Distrito' : 'Provincia'; V._nombre = D ? D.nombre : P.nombre; V._prov = P.nombre;
+    V._nDistProv = P.distOrder.length;
+  }
+  return V;
+}
+const isSub = R => R._tipo !== 'Región';
+const fullName = R => `${R._tipo} ${R._nombre}`;
+const crumb = R => R._tipo === 'Distrito' ? `Provincia ${R._prov} · Región ${R.region}` : R._tipo === 'Provincia' ? `Región ${R.region}` : '';
+function lvlNote(R, fields){
+  if (!isSub(R) || fields.some(f => R._local.has(f))) return '';
+  return `<div class="lvl-note">Información disponible solo a nivel regional (${esc(R.region)})</div>`;
 }
 const fuente = k => CONFIG.FUENTES[k] || '';
 // Íconos: el nombre de la columna Indicador de la hoja Iconos
@@ -389,8 +451,8 @@ async function resolveImages(R){
 
 // ── Piezas comunes ──
 const stripe = () => `<div class="stripe"><i></i><i></i><i></i><i></i><i></i></div>`;
-const footer = (R, n) => `<div class="foot"><span>Resumen estadístico · ${esc(R.region)}</span><span>${n}</span></div>${stripe()}`;
-const band = R => `<div class="band">Región ${esc(R.region)}</div>`;
+const footer = (R, n) => `<div class="foot"><span>Resumen estadístico · ${esc(fullName(R))}${isSub(R)?` (${esc(crumb(R))})`:''}</span><span>${n}</span></div>${stripe()}`;
+const band = R => `<div class="band">${esc(fullName(R))}${isSub(R)?`<div class="band-sub">${esc(crumb(R))}</div>`:''}</div>`;
 
 function donut(p, color){
   const r = 15.5, c = 2*Math.PI*r, v = p==null ? 0 : Math.max(0, Math.min(100,p));
@@ -406,7 +468,8 @@ function pageCover(R){
     <div class="cover-top">
       <div class="cover-logo"><img src="${CONFIG.CARPETA_IMAGENES}logo_mimp.png" alt="MIMP"></div>
       <div class="cover-kicker">RESUMEN ESTADÍSTICO</div>
-      <div class="cover-name">Región ${esc(R.region)}</div>
+      <div class="cover-name" style="${fullName(R).length > 26 ? 'font-size:32pt' : fullName(R).length > 18 ? 'font-size:38pt' : ''}">${esc(fullName(R))}</div>
+      ${isSub(R) ? `<div class="cover-sub">${esc(crumb(R))}</div>` : ''}
       ${R._portada ? `<div class="cover-photo"><div class="ph" style="background-image:url('${R._portada}')" role="img" aria-label="Paisaje de ${esc(R.region)}"></div></div>` : ''}
       <div class="cover-meta">
         <div class="cover-org">Ministerio de la Mujer y<br>Poblaciones Vulnerables</div>
@@ -440,11 +503,21 @@ function authority(R, p, defCargo){
 function pageAuthorities(R, n){
   const body = authority(R,'gob','Gobernador Regional') + authority(R,'vgob','Vicegobernador Regional');
   if(!body) return '';
-  return `<section class="page">${band(R)}<div class="page-body"><div><span class="h2">Autoridades regionales</span></div>${body}
+  return `<section class="page">${band(R)}<div class="page-body"><div><span class="h2">Autoridades regionales</span></div>${isSub(R) ? `<div class="lvl-note">Corresponden al Gobierno Regional de ${esc(R.region)}</div>` : ''}${body}
     ${srcLine('autoridades')}</div>${footer(R,n)}</section>`;
 }
 
 // ── Página 3: perfil territorial ──
+function territorio(R){
+  const Rg = R._region;
+  const counts = Rg._nProv || Rg._nDist ? `<b>${fmtN(Rg._nProv)} provincias</b> y <b>${fmtN(Rg._nDist)} distritos</b>` : '';
+  if (R._tipo === 'Región')
+    return `<p>${counts ? `${esc(Rg.region)} tiene ${counts}` : `${esc(Rg.region)}: información disponible solo a nivel regional`}</p>`;
+  const top = R._tipo === 'Provincia'
+    ? `La provincia de ${esc(R._nombre)} tiene <b>${fmtN(R._nDistProv)} distritos</b>`
+    : `El distrito de ${esc(R._nombre)} pertenece a la provincia de ${esc(R._prov)}`;
+  return `<p>${top}</p><p class="reg">Región ${esc(Rg.region)}${counts ? ` · ${counts}` : ''}</p>`;
+}
 function pageProfile(R, n){
   const T = num(R.pob_total);
   const hasInd = ['trab_inf_mujer','trab_inf_hombre','jefas_hogar','analf_mujer','analf_hombre','alcaldesas','actividades'].some(k => has(R[k]));
@@ -475,13 +548,14 @@ function pageProfile(R, n){
   const single = (key, lbl, isN, ic) => has(R[key]) ? `<div class="ind">${withIcon(ic, `<div class="k">${isN?nTxt(R[key]):fmtP(R[key])}</div><div class="lbl">${lbl}</div>${srcLine(key)}`)}</div>` : '';
   return `<section class="page">${band(R)}<div class="page-body">
     <div class="title-c"><h2>Perfil territorial</h2>
-      ${has(R.provincias)||has(R.distritos) ? `<p>${esc(R.region)} tiene <b>${nTxt(R.provincias)} provincias</b> y <b>${nTxt(R.distritos)} distritos</b></p>` : ''}</div>
+      ${territorio(R)}</div>
     <div class="cols divided">
       <div class="col">
         <div><span class="h2">Población censada</span>${T?`<div class="pop-total">${fmtN(T)} habitantes</div>`:''}</div>
+        ${lvlNote(R, ['pob_total'])}
         <div class="donuts">${groups.map(([l,k,c,pk]) => `<div class="donut">${icon(ICON_POB[k],'ic-d')}${donut(has(R[pk]) ? pctNum(R[pk]) : share(num(R[k]),T),c)}<div class="donut-lbl">${l}</div><div class="donut-n">(${nTxt(R[k])})</div></div>`).join('')}</div>
         ${srcLine('poblacion')}
-        ${hasInd ? `<div><span class="h2">Indicadores</span></div>
+        ${hasInd ? `<div><span class="h2">Indicadores</span></div>${lvlNote(R, ['trab_inf_mujer','jefas_hogar','analf_mujer','alcaldesas','actividades'])}
         <div class="ind-grid">
           ${pair('Trabajo infantil','trab_inf_mujer','trab_inf_hombre','trabajo_infantil','Trabajo infantil')}
           ${single('jefas_hogar','Mujeres jefas de hogar',false,'Mujeres jefas de hogar')}
@@ -492,11 +566,11 @@ function pageProfile(R, n){
         ${has(R.analf_mujer)||has(R.analf_hombre) ? '<div class="note">(*) Porcentaje calculado respecto al total poblacional de su mismo sexo en cada región. Comprende residentes de 15 años a más.</div>' : ''}` : ''}
       </div>
       <div class="col">
-        ${prob.length ? `<div><span class="h2">Problemática social vinculada al sector</span></div>
+        ${prob.length ? `<div><span class="h2">Problemática social vinculada al sector</span></div>${lvlNote(R, prob.map(p=>p[0]))}
         <div class="prob-grid">${prob.map(([k,l,nac,t,ic]) => `<div class="prob">${withIcon(ic, `<div class="k">${t==='n'?nTxt(R[k]):fmtP(R[k])}</div>
           <div class="lbl">${l}</div>${nac && has(NACIONAL[k]) ? `<div class="nac">Nacional: ${fmtP(NACIONAL[k])}</div>`:''}${srcLine(k)}`)}</div>`).join('')}</div>
         <div class="note">(**) Violencia familiar contra la mujer de 15 a 49 años de edad, ejercida alguna vez por el esposo o compañero.</div>` : ''}
-        ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>
+        ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>${lvlNote(R, ['demuna','juguemos','ponte_modo_ninez','oredis','ciam','beneficencias'])}
         ${svc.map(([t,c,items]) => `<div class="svc-group" style="--c:${c}"><div class="svc-head">${icon(ICON_SVC[t],'ic-h')}${t}</div>
           ${items.map(([k,l,s]) => `<div class="svc-item"><span class="n">${nTxt(R[k])}</span><span class="t">${l}${s?`<small>${s}</small>`:''}</span></div>`).join('')}</div>`).join('')}` : ''}
       </div>
@@ -522,6 +596,7 @@ function pageServices(R, n){
   return `<section class="page">${band(R)}<div class="page-body">
     <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>
       <div class="svc-counts"><b>${pad(all.length)}</b> servicios MIMP<br><b>${pad(all.reduce((a,s)=>a+s.n,0))}</b> centros</div></div>
+    ${lvlNote(R, ['cem_reg_n','cem24_n','hrt_n','upe_n','pcd_centros'])}
     ${R._mapa ? `<div class="map"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : ''}
     <div class="cols divided">
       <div class="col">
@@ -552,7 +627,7 @@ function pageUPE(R, n){
       return `<div class="bar-row"><span>${l}</span><div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(1)}%"></div></div><b>${fmtN(v)}</b></div>`; }).join('')}</div>`;
   };
   return `<section class="page">${band(R)}<div class="page-body">
-    <div><span class="h2">Unidad de Protección Especial (UPE) ${esc(R.region)}</span></div>
+    <div><span class="h2">Unidad de Protección Especial (UPE) ${esc(R.region)}</span></div>${lvlNote(R, ['upe_total'])}
     <div class="upe-hero"><span class="n">${nTxt(R.upe_total)}</span><p>niñas, niños y adolescentes iniciaron procedimiento bajo alguna de las tipologías de violencia: sexual, física o psicológica.</p></div>
     ${bars('Tipo de procedimiento', [['Riesgo','upe_riesgo'],['Desprotección','upe_desproteccion']], 'var(--red)')}
     ${bars('Tipo de violencia, según tabla de valoración de riesgo', [['Sexual','upe_sexual'],['Física','upe_fisica'],['Psicológica','upe_psicologica']], 'var(--violet)')}
@@ -569,16 +644,34 @@ function buildPages(R){
 }
 
 // ── Vista ──
-const current = () => REGIONES.find(r => slug(r.region) === $('region').value) || REGIONES[0];
+const curRegion = () => REGIONES.find(r => slug(r.region) === $('region').value) || REGIONES[0];
+function current(){
+  const Rg = curRegion(); if (!Rg) return null;
+  const pk = Rg._subs[$('prov').value] ? $('prov').value : '';
+  const dk = pk && Rg._subs[pk].dists[$('dist').value] ? $('dist').value : '';
+  return buildView(Rg, pk, dk);
+}
+function fillProv(sel){
+  const Rg = curRegion(); const p = $('prov');
+  const subs = Rg ? Rg._subOrder : [];
+  p.innerHTML = `<option value="">${subs.length ? 'Toda la región' : 'Sin datos provinciales'}</option>` + subs.map(pk => `<option value="${esc(pk)}">${esc(Rg._subs[pk].nombre)}</option>`).join('');
+  p.disabled = !subs.length; p.value = sel && Rg && Rg._subs[sel] ? sel : '';
+}
+function fillDist(sel){
+  const Rg = curRegion(); const d = $('dist'); const P = Rg && Rg._subs[$('prov').value];
+  const list = P ? P.distOrder : [];
+  d.innerHTML = `<option value="">${!P ? 'Distrito' : list.length ? 'Toda la provincia' : 'Sin datos distritales'}</option>` + list.map(dk => `<option value="${esc(dk)}">${esc(P.dists[dk].nombre)}</option>`).join('');
+  d.disabled = !list.length; d.value = sel && P && P.dists[sel] ? sel : '';
+}
 async function render(){
   const R = current(); if(!R) return;
-  await resolveImages(R);
+  await resolveImages(R._region); R._portada = R._region._portada; R._mapa = R._region._mapa;
   $('viewer').innerHTML = buildPages(R);
-  history.replaceState(null,'','#'+slug(R.region));
+  history.replaceState(null,'','#'+[$('region').value, $('prov').value, $('dist').value].filter(Boolean).map(encodeURIComponent).join('/'));
 }
 
 // ── PDF ──
-const fileName = R => 'Resumen_Estadistico_' + norm(R.region).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').replace(/(^|_)([a-z])/g,(m,a,b)=>a+b.toUpperCase()) + '.pdf';
+const fileName = R => 'Resumen_Estadistico_' + [R.region, R._prov, R._tipo==='Distrito' ? R._nombre : ''].filter(Boolean).map(s => norm(s).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').replace(/(^|_)([a-z])/g,(m,a,b)=>a+b.toUpperCase())).join('_') + '.pdf';
 function waitImages(root){
   return Promise.all([...root.querySelectorAll('img')].map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
 }
@@ -594,11 +687,11 @@ async function pagesToPdf(root){
   return pdf;
 }
 function saveBlob(blob, name){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
-function busy(on){ ['btnPdf','btnZip','btnPrint','region'].forEach(id => $(id).disabled = on); }
+function busy(on){ ['btnPdf','btnZip','btnPrint','region'].forEach(id => $(id).disabled = on); if (on){ $('prov').disabled = $('dist').disabled = true; } else { fillProv($('prov').value); fillDist($('dist').value); } }
 function progress(p){ $('progress').style.width = p==null ? '0' : (p*100).toFixed(1)+'%'; }
 
 async function downloadOne(){
-  const R = current(); busy(true); status('Generando PDF de ' + R.region + '…');
+  const R = current(); busy(true); status('Generando PDF de ' + fullName(R) + '…');
   try{ const pdf = await pagesToPdf($('viewer')); pdf.save(fileName(R)); status(''); }
   catch(e){ status('No se pudo generar el PDF: ' + e.message, true); }
   busy(false);
@@ -608,9 +701,9 @@ async function downloadAll(){
   try{
     for (let i=0;i<REGIONES.length;i++){
       const R = REGIONES[i]; status(`Generando ${i+1} de ${REGIONES.length}: ${R.region}…`); progress(i/REGIONES.length);
-      await resolveImages(R); off.innerHTML = buildPages(R);
+      await resolveImages(R); const V = buildView(R); V._portada = R._portada; V._mapa = R._mapa; off.innerHTML = buildPages(V);
       const pdf = await pagesToPdf(off);
-      zip.file(fileName(R), pdf.output('arraybuffer'));
+      zip.file(fileName(V), pdf.output('arraybuffer'));
     }
     status('Comprimiendo archivos…'); progress(1);
     saveBlob(await zip.generateAsync({type:'blob'}), 'Resumenes_Estadisticos_Regionales.zip');
@@ -621,7 +714,9 @@ async function downloadAll(){
 
 // ── Inicio ──
 (async function init(){
-  $('region').addEventListener('change', render);
+  $('region').addEventListener('change', () => { fillProv(); fillDist(); render(); });
+  $('prov').addEventListener('change', () => { fillDist(); render(); });
+  $('dist').addEventListener('change', render);
   $('btnPdf').addEventListener('click', downloadOne);
   $('btnZip').addEventListener('click', downloadAll);
   $('btnPrint').addEventListener('click', () => window.print());
@@ -631,8 +726,9 @@ async function downloadAll(){
     if(!REGIONES.length) throw new Error('ninguna hoja respondió con regiones');
     const sel = $('region');
     sel.innerHTML = REGIONES.map(r => `<option value="${slug(r.region)}">${esc(r.region)}</option>`).join('');
-    const h = location.hash.slice(1); if (REGIONES.some(r => slug(r.region)===h)) sel.value = h;
-    busy(false); await render();
+    const [hr, hp, hd] = location.hash.slice(1).split('/').map(decodeURIComponent);
+    if (REGIONES.some(r => slug(r.region)===hr)) sel.value = hr;
+    busy(false); fillProv(hp); fillDist(hd); await render();
     status(failed.length ? 'No se pudo leer la hoja: ' + failed.join(', ') + '. El resumen se muestra sin esos datos.' : '', failed.length > 0);
   }catch(e){ status('No se pudieron cargar los datos del Sheet (' + e.message + '). Revisa que las hojas estén publicadas como TSV.', true); }
 })();
