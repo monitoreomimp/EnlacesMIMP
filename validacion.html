@@ -3,307 +3,964 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
-<title>Validación de ubigeos · MIMP</title>
+<title>Resúmenes estadísticos regionales · MIMP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <style>
 :root{
-  --red:#C8102E; --violet:#3B2E7E; --amber:#B07800; --green:#2E7D32;
-  --ink:#1F2430; --ink-2:#4B5462; --ink-3:#7A8392; --line:#E3E6EB; --soft:#F3F4F7; --bg:#F6F7F9; --card:#fff;
-  --err-bg:#FDECEE; --warn-bg:#FFF4D6; --ok-bg:#E8F5E9;
+  --red:#C8102E; --red-dk:#A50D25; --violet:#3B2E7E; --violet-2:#7A45E0; --amber:#F2A900;
+  --ink:#1F2430; --ink-2:#4B5462; --ink-3:#7A8392; --line:#E3E6EB; --soft:#F3F4F7; --bg:#E9EBEF;
   --sans:'Public Sans', system-ui, Arial, sans-serif;
 }
-@media (prefers-color-scheme: dark){ :root{
-  color-scheme: dark; --ink:#E8EAF0; --ink-2:#B8BEC9; --ink-3:#8A93A3; --line:#2E3340; --soft:#20242E; --bg:#14171E; --card:#1A1E27;
-  --err-bg:#3A1C22; --warn-bg:#3A3018; --ok-bg:#1C3320; --violet:#A99CF0; --amber:#E0B040; --green:#7CC784; --red:#F0606F;
-}}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
-header{background:var(--card);border-top:4px solid var(--red);border-bottom:1px solid var(--line);padding:16px 28px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
-header h1{font-size:18px;font-weight:700}
-header p{font-size:13px;color:var(--ink-3)}
-.tag{margin-left:auto;font-size:12px;font-weight:600;background:var(--warn-bg);color:var(--amber);padding:5px 10px;border-radius:6px}
-main{max-width:1240px;margin:0 auto;padding:24px 20px 60px;display:flex;flex-direction:column;gap:22px}
-.status{font-size:14px;color:var(--ink-2)}
-.status.err{color:var(--red)}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
-.card h2{font-size:15px;font-weight:700;margin-bottom:10px}
-.nums{display:flex;gap:18px;flex-wrap:wrap}
-.nums div{display:flex;flex-direction:column}
-.nums b{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
-.nums span{font-size:12px;color:var(--ink-3)}
-.c-err b{color:var(--red)} .c-warn b{color:var(--amber)} .c-ok b{color:var(--green)}
-.tools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-.seg{display:flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--card)}
-.seg button{border:none;background:none;padding:9px 14px;font:600 13px var(--sans);color:var(--ink-2);cursor:pointer}
-.seg button[aria-pressed="true"]{background:var(--violet);color:#fff}
-select,input[type=search]{height:38px;border:1px solid var(--line);border-radius:10px;padding:0 12px;font:500 13.5px var(--sans);color:var(--ink);background:var(--card)}
-input[type=search]{flex:1;min-width:200px}
-.btn{height:38px;padding:0 14px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--violet);font:600 13px var(--sans);cursor:pointer}
+
+/* ── Barra de control ── */
+.bar{position:sticky;top:0;z-index:20;background:#fff;border-top:4px solid var(--red);border-bottom:1px solid var(--line);padding:12px 28px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+.bar-brand{display:flex;align-items:center;gap:14px;margin-right:auto}
+.bar-brand img{height:38px;display:block}
+.bar-title{font-size:15px;font-weight:700;line-height:1.2}
+.bar-sub{font-size:12px;color:var(--ink-3)}
+.ctrl{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ctrl select{height:40px;min-width:220px;padding:0 12px;border:1px solid #D5DAE1;border-radius:10px;font:600 14px var(--sans);color:var(--ink);background:#fff}
+.btn{height:40px;padding:0 16px;border-radius:10px;border:1px solid #D5DAE1;background:#fff;color:var(--violet);font:600 13.5px var(--sans);cursor:pointer;white-space:nowrap}
 .btn:hover{border-color:var(--violet)}
-button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
-.table-wrap{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:12px}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{position:sticky;top:0;background:var(--soft);text-align:left;font-weight:700;color:var(--ink-2);padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
-td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
-tr:last-child td{border-bottom:none}
-td.num{font-variant-numeric:tabular-nums;white-space:nowrap}
-.pill{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap}
-.pill.err{background:var(--err-bg);color:var(--red)} .pill.warn{background:var(--warn-bg);color:var(--amber)}
-.muted{color:var(--ink-3)}
-.empty{padding:30px;text-align:center;color:var(--ink-3)}
-details{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px}
-summary{cursor:pointer;font-weight:700;font-size:14px}
-.miss{margin-top:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px}
-.miss div{font-size:13px;line-height:1.5}
-.miss b{display:block}
-.help{font-size:13px;color:var(--ink-2);line-height:1.55}
+.btn.primary{background:var(--red);border-color:var(--red);color:#fff}
+.btn.primary:hover{background:var(--red-dk)}
+.btn:disabled{opacity:.5;cursor:wait}
+label.btn{display:inline-flex;align-items:center}
+.src-info{font-size:12.5px;color:var(--ink-2);padding:8px 28px;background:#fff;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.src-info button{border:none;background:none;color:var(--red);font:600 12.5px var(--sans);cursor:pointer;padding:0}
+@media print{.src-info{display:none!important}}
+.btn:focus-visible,.ctrl select:focus-visible{outline:2px solid var(--violet);outline-offset:2px}
+.status{font-size:13px;color:var(--ink-2);padding:10px 28px;background:#FFF8E5;border-bottom:1px solid #F1E2B5;display:none}
+.status.show{display:block}
+.status.err{background:#FDECEE;border-color:#F4C7CE;color:var(--red-dk)}
+.progress{height:3px;background:var(--red);width:0;transition:width .2s}
+
+.viewer{padding:28px 16px 60px;display:flex;flex-direction:column;align-items:center;gap:24px;overflow-x:auto}
+#offscreen{position:fixed;left:-10000px;top:0}
+
+/* ── Página A4 ── */
+.page{width:210mm;height:297mm;background:#fff;position:relative;overflow:hidden;flex-shrink:0;box-shadow:0 2px 12px rgba(20,24,40,.12);display:flex;flex-direction:column}
+.page-body{flex:1;padding:9mm 11mm 6mm;display:flex;flex-direction:column;gap:5mm;min-height:0}
+.band{background:var(--violet);color:#fff;text-align:center;font-size:21pt;font-weight:800;letter-spacing:.01em;padding:4mm 0;text-transform:uppercase}
+.stripe{height:2.2mm;display:flex;flex-shrink:0}
+.stripe i{flex:1}
+.stripe i:nth-child(1){flex:6;background:var(--red)}
+.stripe i:nth-child(2){background:var(--violet-2)}
+.stripe i:nth-child(3){background:var(--amber)}
+.stripe i:nth-child(4){background:#3FA34D}
+.stripe i:nth-child(5){background:#2FA4E7}
+.foot{display:flex;justify-content:space-between;font-size:7pt;color:var(--ink-3);padding:0 11mm 2.5mm}
+.h2{display:inline-block;background:var(--violet);color:#fff;font-size:11pt;font-weight:700;padding:1.6mm 4mm;border-radius:1.5mm}
+.note{font-size:6.8pt;color:var(--ink-3);font-style:italic;line-height:1.4}
+.src{font-size:7.5pt;color:var(--ink-2)}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:7mm;min-height:0}
+.cols>.col{display:flex;flex-direction:column;gap:4mm;min-width:0}
+.cols.divided>.col:first-child{border-right:1px solid var(--line);padding-right:7mm}
+
+/* Portada */
+.cover-top{background:var(--red);color:#fff;padding:9mm 11mm 9mm;display:flex;flex-direction:column;gap:6mm;flex:1}
+.cover-logo{background:#fff;border-radius:1.5mm;padding:1.6mm 2.4mm;align-self:flex-start;display:flex}
+.cover-logo img{height:12mm;display:block}
+.cover-kicker{font-size:17pt;font-weight:500;margin-top:10mm;letter-spacing:.02em}
+.cover-name{font-size:46pt;font-weight:800;line-height:1;letter-spacing:-.02em;margin-top:-3mm}
+.cover-photo{border:2.5mm solid #fff;height:84mm;background:#fff}
+.ph{width:100%;height:100%;background:#ddd center/cover no-repeat}
+.cover-meta{margin-top:auto;display:flex;flex-direction:column;align-items:flex-end;gap:5mm}
+.cover-org{font-size:15pt;text-align:right;line-height:1.25}
+.cover-corte{background:#fff;color:var(--ink);font-size:11pt;padding:2mm 4mm;min-width:80mm;text-transform:uppercase}
+.cover-bottom{padding:8mm 11mm 8mm;display:grid;grid-template-columns:1fr 1fr;gap:8mm;font-size:10pt;line-height:1.45}
+.cover-bottom .lead{border-left:.6mm solid var(--red);padding-left:4mm}
+.cover-bottom ul{list-style:none;display:flex;flex-direction:column;gap:2.4mm;margin-top:2.4mm}
+.cover-bottom li{padding-left:5mm;position:relative}
+.cover-bottom li::before{content:"";position:absolute;left:0;top:1.9mm;width:1.8mm;height:1.8mm;border-radius:50%;background:var(--ink)}
+
+/* Autoridades */
+.authority{display:grid;grid-template-columns:38mm 1fr;gap:8mm;align-items:start;padding:6mm 0;border-bottom:1px solid var(--line)}
+.authority:last-child{border-bottom:none}
+.auth-photo{width:38mm;height:46mm;border-radius:2mm;background:var(--soft);overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--ink-3);font-size:8pt}
+.authority.no-photo{grid-template-columns:1fr}
+.auth-role{font-size:10pt;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:.02em}
+.auth-name{font-size:20pt;font-weight:800;margin:1.5mm 0 4mm;line-height:1.1}
+.auth-list{display:grid;grid-template-columns:auto 1fr;gap:2.2mm 6mm;font-size:10pt}
+.auth-list dt{color:var(--ink-3)}
+.auth-list dd{font-weight:600}
+
+/* Perfil */
+.title-c{text-align:center}
+.title-c h2{font-size:17pt;color:var(--violet);font-weight:700}
+.title-c p{font-size:15pt;color:var(--violet);margin-top:2mm}
+.title-c b{font-weight:500}
+.title-c .reg{font-size:11pt;color:var(--ink-2);margin-top:1.5mm}
+.band-sub{font-size:10pt;font-weight:500;letter-spacing:.02em;margin-top:1mm;opacity:.9}
+.cover-sub{font-size:14pt;font-weight:500;margin-top:-2mm}
+.lvl-note{align-self:flex-start;display:inline-block;background:#FFF4D6;color:#7A5A00;font-size:7.8pt;font-weight:600;padding:1mm 2.5mm;border-radius:1mm}
+.ctrl select.sm{min-width:160px}
+.pop-total{font-size:17pt;color:var(--violet);margin-top:2mm}
+.donuts{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm 2mm}
+.donut{display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
+.donut .ic-d{position:absolute;left:0;top:0;width:7mm;height:7mm;object-fit:contain}
+.with-ic{display:grid;grid-template-columns:9mm 1fr;gap:2.5mm;align-items:start}
+.with-ic>.ic{width:9mm;height:9mm;object-fit:contain}
+.ic-h{width:6.5mm;height:6.5mm;object-fit:contain;vertical-align:middle;margin-right:2mm}
+.donut svg{width:24mm;height:24mm}
+.donut-lbl{font-size:8.5pt;font-weight:700;color:var(--violet);line-height:1.2;margin-top:1mm}
+.donut-n{font-size:7.5pt;color:var(--ink-2)}
+.ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm 5mm}
+.ind b{color:var(--red);font-size:12pt}
+.ind .k{font-size:13pt;font-weight:700;color:var(--red)}
+.ind .lbl{font-size:9pt;font-weight:700;line-height:1.25}
+.ind .row{font-size:9pt}
+.prob-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm 5mm}
+.prob .k{font-size:17pt;font-weight:800;color:var(--red);line-height:1.1}
+.prob .lbl{font-size:8.6pt;font-weight:700;line-height:1.25;margin-top:.6mm}
+.prob .nac{font-size:8.6pt;font-weight:700}
+.svc-group{display:flex;flex-direction:column;gap:2.4mm}
+.svc-head{font-size:10pt;border-bottom:.4mm solid var(--c,var(--amber));padding-bottom:1.4mm}
+.svc-item{display:grid;grid-template-columns:11mm 1fr;align-items:center;gap:2mm}
+.svc-item .n{font-size:15pt;font-weight:800;color:var(--c,var(--amber));text-align:center}
+.svc-item .t{font-size:9pt;font-weight:700;line-height:1.25}
+.svc-item .t.none{font-weight:400;color:var(--ink-2)}
+.svc-item .t small{display:block;font-weight:400;font-size:8pt}
+
+/* Servicios implementados */
+.svc-top{display:grid;grid-template-columns:1fr auto;gap:6mm;align-items:start}
+.svc-counts{text-align:right;color:var(--violet);font-size:14pt;line-height:1.6}
+.svc-counts b{font-weight:800}
+.map{height:100mm;display:flex;align-items:center;justify-content:center}
+.map img{max-width:100%;max-height:100%;display:block}
+.map-geo{height:auto}
+.map-geo > svg{width:100%;height:auto;display:block}
+.prov-grid{display:grid;grid-template-columns:1fr 1fr;gap:2.5mm 8mm;align-content:start}
+.prov{display:flex;justify-content:space-between;gap:4mm;font-size:9.5pt;border-bottom:1px solid var(--line);padding-bottom:1.6mm}
+.prov span:first-child{font-weight:600}
+.sym{display:inline-flex;gap:1mm;flex-wrap:wrap;justify-content:flex-end}
+.sym svg{width:3.2mm;height:3.2mm}
+.leg.leg-cols{grid-template-columns:5mm 1fr 5mm 1fr;font-size:8pt;margin-top:3mm}
+.block h3{font-size:10.5pt;font-weight:700;margin-bottom:2mm}
+.block .big{font-size:14pt;font-weight:800;color:var(--red)}
+.block .big.amber{color:var(--amber)}
+.block .tot{display:flex;align-items:baseline;gap:4mm;font-size:9pt;margin-bottom:2mm}
+.sub{font-size:8.8pt;font-weight:700;margin:1.5mm 0 1.2mm}
+.sub b{color:var(--red);font-size:11pt}
+.leg{display:grid;grid-template-columns:5mm 1fr;gap:1.6mm 2.5mm;align-items:start;font-size:8.8pt;color:var(--violet);margin-left:2mm}
+.leg svg{width:3.6mm;height:3.6mm;margin-top:.4mm}
+.leg b{font-weight:700}
+.muted{font-size:9pt;color:var(--ink-2)}
+.kpi-pair{display:grid;grid-template-columns:1fr 1fr;gap:4mm}
+.kpi-pair .v{font-size:13pt;font-weight:800;color:var(--violet)}
+.kpi-pair .l{font-size:8.5pt;color:var(--ink-2)}
+.red-h{font-size:10pt;color:var(--red);margin-bottom:2mm}
+hr.sep{border:none;border-top:1px solid var(--line)}
+
+/* UPE */
+.upe-hero{display:flex;align-items:center;gap:8mm;background:var(--soft);border-radius:2mm;padding:6mm 8mm}
+.upe-hero .n{font-size:40pt;font-weight:800;color:var(--violet);line-height:1}
+.upe-hero p{font-size:11pt;line-height:1.4}
+.bars{display:flex;flex-direction:column;gap:3mm}
+.bars h3{font-size:11pt;font-weight:700;color:var(--violet)}
+.bar-row{display:grid;grid-template-columns:32mm 1fr 12mm;align-items:center;gap:3mm;font-size:10pt}
+.bar-track{height:6mm;background:var(--soft);border-radius:1mm;overflow:hidden}
+.bar-fill{height:100%;background:var(--c,var(--violet))}
+.bar-row b{text-align:right;font-size:12pt}
+
+@media (max-width:820px){
+  .bar{padding:12px 16px}
+  .bar-brand .bar-sub{display:none}
+  .ctrl{width:100%}
+  .ctrl select{flex:1;min-width:0}
+  .viewer{align-items:flex-start}
+}
+@media print{
+  @page{size:A4;margin:0}
+  body{background:#fff}
+  .bar,.status,.progress{display:none!important}
+  .viewer{padding:0;gap:0;display:block}
+  .page{box-shadow:none;break-after:page}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+@media (prefers-reduced-motion:reduce){.progress{transition:none}}
 </style>
 </head>
 <body>
-<header>
-  <div><h1>Validación de ubigeos</h1><p>Compara las hojas del Google Sheet con el anexo oficial de ámbito geográfico</p></div>
-  <span class="tag">Uso interno</span>
-</header>
-<main>
-  <p class="status" id="status">Cargando hojas…</p>
-  <section class="cards" id="cards"></section>
-  <div class="tools" id="tools" hidden>
-    <div class="seg" role="group" aria-label="Tipo">
-      <button type="button" data-f="all" aria-pressed="true">Todo</button>
-      <button type="button" data-f="err" aria-pressed="false">Errores</button>
-      <button type="button" data-f="warn" aria-pressed="false">Avisos</button>
+
+<header class="bar">
+  <div class="bar-brand">
+    <img src="imagenes/logo_mimp.png" alt="Ministerio de la Mujer y Poblaciones Vulnerables">
+    <div>
+      <div class="bar-title">Resúmenes estadísticos regionales</div>
+      <div class="bar-sub">Oficina General de Monitoreo, Evaluación de Políticas y Gestión Descentralizada</div>
     </div>
-    <select id="fHoja" aria-label="Hoja"></select>
-    <select id="fReg" aria-label="Departamento"></select>
-    <input type="search" id="q" placeholder="Buscar ubigeo, distrito o provincia…" aria-label="Buscar">
-    <button class="btn" id="csv" type="button">Descargar CSV</button>
   </div>
-  <div class="table-wrap" id="tableWrap" hidden>
-    <table>
-      <thead><tr><th>Tipo</th><th>Hoja</th><th>Fila</th><th>Ubigeo</th><th>En el Sheet</th><th>Problema</th><th>Según el anexo</th><th>Sugerencia</th></tr></thead>
-      <tbody id="tbody"></tbody>
-    </table>
+  <div class="ctrl">
+    <select id="region" aria-label="Región" disabled><option>Cargando regiones…</option></select>
+    <select id="prov" class="sm" aria-label="Provincia" disabled><option>Provincia</option></select>
+    <select id="dist" class="sm" aria-label="Distrito" disabled><option>Distrito</option></select>
+    <button class="btn primary" id="btnPdf" disabled>Descargar PDF</button>
+    <button class="btn" id="btnZip" disabled>Todas las regiones (ZIP)</button>
+    <button class="btn" id="btnPrint" disabled>Imprimir</button>
   </div>
-  <details id="missBox" hidden>
-    <summary id="missTitle">Distritos del anexo sin fila en Población Censada</summary>
-    <p class="help" style="margin-top:8px">Si faltan distritos, el resumen dirá que la región tiene menos distritos de los que realmente tiene.</p>
-    <div class="miss" id="miss"></div>
-  </details>
-  <p class="help">
-    <b>Cómo ubicar cada caso:</b> la columna <b>Hoja</b> indica la pestaña del Google Sheet y <b>Fila</b> el número de fila. En Google Sheets puedes ir directo escribiendo la celda (por ejemplo <b>A559</b>) en el cuadro de nombre, arriba a la izquierda. <b>En el Sheet</b> es lo que dice tu hoja y <b>Según el anexo</b> es el distrito al que corresponde ese ubigeo en el anexo.<br>
-    <b>Errores:</b> el ubigeo no existe, tiene formato inválido o corresponde a otro distrito, provincia o departamento. Esos datos se suman en un lugar equivocado del resumen.<br>
-    <b>Avisos:</b> el ubigeo es correcto, pero el nombre está escrito distinto al anexo (abreviado, sin "de", con otra grafía). No afecta los cálculos.<br>
-    <b>"No existe en el anexo":</b> si el distrito es real y reciente, agrégalo a la hoja del anexo y deja de marcarse.
-  </p>
-</main>
+</header>
+<div class="progress" id="progress"></div>
+<div class="status" id="status"></div>
+
+<main class="viewer" id="viewer"></main>
+<div id="offscreen" aria-hidden="true"></div>
 
 <script>
 // ══════════════════════════════════════════════════════════════
-//  Hojas a revisar: deben tener las columnas Ubigeo, Departamento,
-//  Provincia y Distrito. La primera se usa además para ver qué
-//  distritos del anexo faltan.
+//  CONFIGURACIÓN
+//  HOJAS: enlaces TSV publicados del Google Sheet. La primera columna
+//  de cada hoja debe ser la región (Departamento / Región).
+//  CAMPOS: qué encabezado del Sheet alimenta cada dato del resumen.
+//  Si cambias un encabezado en el Sheet, cámbialo también aquí.
 // ══════════════════════════════════════════════════════════════
 const BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJCiQn043FqK5zpdzJ2LacMQVO80RyGzQFSDyc5_x_07VeLCNjO9EfN4pvKu3enw/pub?single=true&output=tsv&gid=';
-const HOJAS = {
-  'Población Censada': BASE + '1109551559',
-  'Serv_impl':         BASE + '2038705844'
+const CONFIG = {
+  CARPETA_IMAGENES: 'imagenes/',
+  CARPETA_PORTADAS: 'Fotos Regiones/',
+  CARPETA_ICONOS: 'Iconos/',
+  MAPA: 'mapas/peru_distritos.json',   // límites distritales (TopoJSON con IDDIST, IDPROV, NOMBDIST, NOMBPROV)   // archivo = nombre de la región tal como está en el Sheet (ej. Apurímac.png)
+  HOJAS: {
+    gobernador: BASE + '353378163',
+    poblacion:  BASE + '1109551559',
+    servicios:  BASE + '806903940',
+    indicadores: BASE + '1665840861',
+    iconos:     BASE + '395452209',  // hoja Iconos: Indicador | Icono
+    serv_impl:  BASE + '2038705844'  // hoja Serv_impl: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Recuento
+  },
+  CAMPOS: {
+    gobernador: {
+      gob_link:'Enlaces',
+      gob_cargo:'Título', gob_nombre:'Nombres y Apellidos', gob_nacimiento:'Fecha de Nacimiento', gob_estudios:'Estudios',
+      gob_partido:'Organización Política', gob_sent_penales:'Sentencias - Delitos', gob_sent_civiles:'Sentencias - Demandas',
+      vgob_cargo:'Título2', vgob_nombre:'Nombres y Apellidos2', vgob_nacimiento:'Fecha de Nacimiento2', vgob_estudios:'Estudios2',
+      vgob_partido:'Organización Política2', vgob_sent_penales:'Sentencias - Delitos2', vgob_sent_civiles:'Sentencias - Demandas2'
+    },
+    poblacion: {
+      pob_total:'Población Censada', pob_mujer:'Mujer', pob_hombre:'Hombre', pob_discapacidad:'Poblacion con discapacidad',
+      pob_0_5:'Primera Infancia', pob_6_11:'Infancia', pob_12_17:'Adolescente', pob_18_29:'Juventud', pob_30_59:'Adulto', pob_60_mas:'Adultos mayores',
+      pct_mujer:'Mujer %', pct_hombre:'Hombre %', pct_discapacidad:'Discapacidad %', pct_0_5:'Prim. Infancia %', pct_6_11:'Infancia %',
+      pct_12_17:'Adolescente %', pct_18_29:'Juventud %', pct_30_59:'Adulto %', pct_60_mas:'Adulto Mayor %'
+    },
+    // Esta hoja tiene varias filas de encabezado, por eso se indica la COLUMNA (letra)
+    indicadores: {
+      trab_inf_mujer:'B', trab_inf_hombre:'C', jefas_hogar:'D', analf_mujer:'E', analf_hombre:'F',
+      alc_prov_m:'G', alc_prov_h:'H', alc_dist_m:'I', alc_dist_h:'J',
+      violencia_mujer:'K', viol_psicologica:'L', viol_fisica:'M', viol_sexual:'N', embarazo_adol:'O',
+      feminicidio:'P', nna_riesgo:'Q', am_discriminacion:'R', pcd_discriminacion:'S'
+    },
+    servicios: {
+      periodo:'periodo',
+      cem_reg_n:'CEMreg-nro', cem_reg_at:'CEMreg-atenciones', cem24_n:'CEM24-nro', cem24_at:'CEM24-atenciones', cem_total_at:'Total de atenciones',
+      hrt_n:'HRT_nro', hrt_at:'hrt_atendidos', upe_n:'UPE_nro', pcd_centros:'Centros Discapacitados',
+      beneficencias:'Sociedades', juguemos:'Juguemos', ponte_modo_ninez:'Estrategias', demuna:'Demuna_Nro', ciam:'CIAM_nro'
+    }
+  },
+  // Agrupación de los servicios de la hoja Serv_impl. Un servicio entra en la
+  // primera categoría que tenga alguna de sus "claves" dentro del nombre.
+  // Si la hoja tiene una columna "Categoría", se usa esa columna en su lugar.
+  CATEGORIAS: [
+    { nombre:'En atención a la violencia', icono:'Atención a la violencia', vacio:'No hay servicios de atención a la violencia',
+      claves:['centro emergencia mujer','hogares de refugio','servicio de atencion rural','servicio de atencion urgente','linea 100','chat 100'] },
+    { nombre:'En niñas, niños y adolescentes', icono:'Servicios NNA', vacio:'No hay servicios para niñas, niños y adolescentes',
+      claves:['unidad de proteccion especial','educadores de calle','car basico','car especializado','car de urgencia','unidad de adopcion'] },
+    { nombre:'En personas con discapacidad', icono:'Servicios discapacidad', vacio:'No hay centros de personas con discapacidad',
+      claves:['car pcd'] },
+    { nombre:'En personas adultas mayores', icono:'Servicios adultos mayores', vacio:'No hay centros de adultos mayores',
+      claves:['centro de atencion de dia','centro de atencion de noche','carpam','adultas mayores','mi60'] },
+    { nombre:'En familias', icono:'Servicios familias', claves:['desarrollo integral de la familia','cedif','comunal familiar','recreacion familiar','familias igualitarias'] }
+  ],
+  OTROS: 'Otros servicios',
+  // Atenciones (hoja Servicios, solo regional) que se muestran junto a cada servicio
+  ATENCIONES: [
+    { servicio:'centro emergencia mujer y familia - regular', campo:'cem_reg_at' },
+    { servicio:'centro emergencia mujer y familia - 24 horas', campo:'cem24_at' },
+    { servicio:'hogares de refugio temporal', campo:'hrt_at', etiqueta:'personas atendidas' }
+  ],
+  // Conteos que, si la celda está vacía, se leen como 0
+  CERO_SI_VACIO: ['feminicidio','alc_prov_m','alc_prov_h','alc_dist_m','alc_dist_h'],
+  FUENTES: {
+    autoridades: 'Infogob - Jurado Nacional de Elecciones',
+    poblacion: 'INEI - Censo 2025. Elaborado: OGMEPGD',
+    servicios: 'OGMEPGD'
+  }
 };
-// Hoja con el anexo de ubigeos (columnas Ubigeo | Departamento | Provincia | Distrito).
-// Si la dejas vacía o no carga, se usa la copia del anexo que viene dentro de esta página.
-const ANEXO_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJCiQn043FqK5zpdzJ2LacMQVO80RyGzQFSDyc5_x_07VeLCNjO9EfN4pvKu3enw/pub?gid=425051960&single=true&output=csv';
-// ID del Google Sheet para abrir cada fila con un clic: es lo que aparece en la barra de
-// direcciones al editar la hoja, entre /d/ y /edit  (docs.google.com/spreadsheets/d/ESTE_ID/edit)
-const ID_EDICION = '';
-
-// Copia del anexo RS de ámbito geográfico. Chiara (Andahuaylas) corregido a 030203.
-let ANEXO = {"dep":{"01":"AMAZONAS","02":"ANCASH","03":"APURIMAC","04":"AREQUIPA","05":"AYACUCHO","06":"CAJAMARCA","07":"CALLAO","08":"CUSCO","09":"HUANCAVELICA","10":"HUANUCO","11":"ICA","12":"JUNIN","13":"LA LIBERTAD","14":"LAMBAYEQUE","15":"LIMA","16":"LORETO","17":"MADRE DE DIOS","18":"MOQUEGUA","19":"PASCO","20":"PIURA","21":"PUNO","22":"SAN MARTIN","23":"TACNA","24":"TUMBES","25":"UCAYALI"},"ref":{"070102":["CALLAO","BELLAVISTA"],"070101":["CALLAO","CALLAO"],"070103":["CALLAO","CARMEN DE LA LEGUA"],"070104":["CALLAO","LA PERLA"],"070105":["CALLAO","LA PUNTA"],"070107":["CALLAO","MI PERU"],"070106":["CALLAO","VENTANILLA"],"150402":["CANTA","ARAHUAY"],"150401":["CANTA","CANTA"],"150403":["CANTA","HUAMANTANGA"],"150404":["CANTA","HUAROS"],"150405":["CANTA","LACHAQUI"],"150406":["CANTA","SAN BUENAVENTURA"],"150407":["CANTA","SANTA ROSA DE QUIVES"],"150502":["CAÑETE","ASIA"],"150503":["CAÑETE","CALANGO"],"150504":["CAÑETE","CERRO AZUL"],"150505":["CAÑETE","CHILCA"],"150506":["CAÑETE","COAYLLO"],"150507":["CAÑETE","IMPERIAL"],"150508":["CAÑETE","LUNAHUANA"],"150509":["CAÑETE","MALA"],"150510":["CAÑETE","NUEVO IMPERIAL"],"150511":["CAÑETE","PACARAN"],"150512":["CAÑETE","QUILMANA"],"150513":["CAÑETE","SAN ANTONIO"],"150514":["CAÑETE","SAN LUIS"],"150501":["CAÑETE","SAN VICENTE DE CAÑETE"],"150515":["CAÑETE","SANTA CRUZ DE FLORES"],"150516":["CAÑETE","ZUÑIGA"],"150702":["HUAROCHIRI","ANTIOQUIA"],"150703":["HUAROCHIRI","CALLAHUANCA"],"150704":["HUAROCHIRI","CARAMPOMA"],"150705":["HUAROCHIRI","CHICLA"],"150706":["HUAROCHIRI","CUENCA"],"150707":["HUAROCHIRI","HUACHUPAMPA"],"150708":["HUAROCHIRI","HUANZA"],"150709":["HUAROCHIRI","HUAROCHIRI"],"150710":["HUAROCHIRI","LAHUAYTAMBO"],"150711":["HUAROCHIRI","LANGA"],"150712":["HUAROCHIRI","LARAOS"],"150713":["HUAROCHIRI","MARIATANA"],"150701":["HUAROCHIRI","MATUCANA"],"150714":["HUAROCHIRI","RICARDO PALMA"],"150715":["HUAROCHIRI","SAN ANDRES DE TUPICOCHA"],"150716":["HUAROCHIRI","SAN ANTONIO"],"150717":["HUAROCHIRI","SAN BARTOLOME"],"150718":["HUAROCHIRI","SAN DAMIAN"],"150719":["HUAROCHIRI","SAN JUAN DE IRIS"],"150720":["HUAROCHIRI","SAN JUAN DE TANTARANCHE"],"150721":["HUAROCHIRI","SAN LORENZO DE QUINTI"],"150722":["HUAROCHIRI","SAN MATEO"],"150723":["HUAROCHIRI","SAN MATEO DE OTAO"],"150724":["HUAROCHIRI","SAN PEDRO DE CASTA"],"150725":["HUAROCHIRI","SAN PEDRO DE HUANCAYRE"],"150726":["HUAROCHIRI","SANGALLAYA"],"150727":["HUAROCHIRI","SANTA CRUZ DE COCACHACRA"],"150728":["HUAROCHIRI","SANTA EULALIA"],"150729":["HUAROCHIRI","SANTIAGO DE ANCHUCAYA"],"150730":["HUAROCHIRI","SANTIAGO DE TUNA"],"150731":["HUAROCHIRI","SANTO DOMINGO DE LOS OLLEROS"],"150732":["HUAROCHIRI","SURCO"],"150102":["LIMA","ANCON"],"150103":["LIMA","ATE"],"150104":["LIMA","BARRANCO"],"150105":["LIMA","BREÑA"],"150106":["LIMA","CARABAYLLO"],"150107":["LIMA","CHACLACAYO"],"150108":["LIMA","CHORRILLOS"],"150109":["LIMA","CIENEGUILLA"],"150110":["LIMA","COMAS"],"150111":["LIMA","EL AGUSTINO"],"150112":["LIMA","INDEPENDENCIA"],"150113":["LIMA","JESUS MARIA"],"150114":["LIMA","LA MOLINA"],"150115":["LIMA","LA VICTORIA"],"150101":["LIMA","LIMA"],"150116":["LIMA","LINCE"],"150117":["LIMA","LOS OLIVOS"],"150118":["LIMA","LURIGANCHO"],"150119":["LIMA","LURIN"],"150120":["LIMA","MAGDALENA DEL MAR"],"150122":["LIMA","MIRAFLORES"],"150123":["LIMA","PACHACAMAC"],"150124":["LIMA","PUCUSANA"],"150121":["LIMA","PUEBLO LIBRE"],"150125":["LIMA","PUENTE PIEDRA"],"150126":["LIMA","PUNTA HERMOSA"],"150127":["LIMA","PUNTA NEGRA"],"150128":["LIMA","RIMAC"],"150129":["LIMA","SAN BARTOLO"],"150130":["LIMA","SAN BORJA"],"150131":["LIMA","SAN ISIDRO"],"150132":["LIMA","SAN JUAN DE LURIGANCHO"],"150133":["LIMA","SAN JUAN DE MIRAFLORES"],"150134":["LIMA","SAN LUIS"],"150135":["LIMA","SAN MARTIN DE PORRES"],"150136":["LIMA","SAN MIGUEL"],"150137":["LIMA","SANTA ANITA"],"150138":["LIMA","SANTA MARIA DEL MAR"],"150139":["LIMA","SANTA ROSA"],"150140":["LIMA","SANTIAGO DE SURCO"],"150141":["LIMA","SURQUILLO"],"150142":["LIMA","VILLA EL SALVADOR"],"150143":["LIMA","VILLA MARIA DEL TRIUNFO"],"151002":["YAUYOS","ALÍS"],"151003":["YAUYOS","AYAUCA"],"151004":["YAUYOS","AYAVIRI"],"151005":["YAUYOS","AZANGARO"],"151006":["YAUYOS","CACRA"],"151007":["YAUYOS","CARANIA"],"151008":["YAUYOS","CATAHUASI"],"151009":["YAUYOS","CHOCOS"],"151010":["YAUYOS","COCHAS"],"151011":["YAUYOS","COLONIA"],"151012":["YAUYOS","HONGOS"],"151013":["YAUYOS","HUAMPARA"],"151014":["YAUYOS","HUANCAYA"],"151015":["YAUYOS","HUANGASCAR"],"151016":["YAUYOS","HUANTAN"],"151017":["YAUYOS","HUAÑEC"],"151018":["YAUYOS","LARAOS"],"151019":["YAUYOS","LINCHA"],"151020":["YAUYOS","MADEAN"],"151021":["YAUYOS","MIRAFLORES"],"151022":["YAUYOS","OMAS"],"151023":["YAUYOS","PUTINZA"],"151024":["YAUYOS","QUINCHES"],"151025":["YAUYOS","QUINOCAY"],"151026":["YAUYOS","SAN JOAQUIN"],"151027":["YAUYOS","SAN PEDRO DE PILAS"],"151028":["YAUYOS","TANTA"],"151029":["YAUYOS","TAURIPAMPA"],"151030":["YAUYOS","TOMAS"],"151031":["YAUYOS","TUPE"],"151032":["YAUYOS","VIÑAC"],"151033":["YAUYOS","VITIS"],"151001":["YAUYOS","YAUYOS"],"040102":["AREQUIPA","ALTO SELVA ALEGRE"],"040101":["AREQUIPA","AREQUIPA"],"040103":["AREQUIPA","CAYMA"],"040104":["AREQUIPA","CERRO COLORADO"],"040105":["AREQUIPA","CHARACATO"],"040106":["AREQUIPA","CHIGUATA"],"040107":["AREQUIPA","JACOBO HUNTER"],"040129":["AREQUIPA","JOSE LUIS BUSTAMANTE Y RIVERO"],"040108":["AREQUIPA","LA JOYA"],"040109":["AREQUIPA","MARIANO MELGAR"],"040110":["AREQUIPA","MIRAFLORES"],"040111":["AREQUIPA","MOLLEBAYA"],"040112":["AREQUIPA","PAUCARPATA"],"040113":["AREQUIPA","POCSI"],"040114":["AREQUIPA","POLOBAYA"],"040115":["AREQUIPA","QUEQUEÑA"],"040116":["AREQUIPA","SABANDIA"],"040117":["AREQUIPA","SACHACA"],"040118":["AREQUIPA","SAN JUAN DE SIGUAS"],"040119":["AREQUIPA","SAN JUAN DE TARUCANI"],"040120":["AREQUIPA","SANTA ISABEL DE SIGUAS"],"040121":["AREQUIPA","SANTA RITA DE SIGUAS"],"040122":["AREQUIPA","SOCABAYA"],"040123":["AREQUIPA","TIABAYA"],"040124":["AREQUIPA","UCHUMAYO"],"040125":["AREQUIPA","VITOR"],"040126":["AREQUIPA","YANAHUARA"],"040127":["AREQUIPA","YARABAMBA"],"040128":["AREQUIPA","YURA"],"040201":["CAMANA","CAMANA"],"040202":["CAMANA","JOSE MARIA QUIMPER"],"040203":["CAMANA","MARIANO NICOLAS VALCARCEL"],"040204":["CAMANA","MARISCAL CACERES"],"040205":["CAMANA","NICOLAS DE PIEROLA"],"040206":["CAMANA","OCOÑA"],"040207":["CAMANA","QUILCA"],"040208":["CAMANA","SAMUEL PASTOR"],"040302":["CARAVELI","ACARI"],"040303":["CARAVELI","ATICO"],"040304":["CARAVELI","ATIQUIPA"],"040305":["CARAVELI","BELLA UNION"],"040306":["CARAVELI","CAHUACHO"],"040301":["CARAVELI","CARAVELI"],"040307":["CARAVELI","CHALA"],"040308":["CARAVELI","CHAPARRA"],"040309":["CARAVELI","HUANUHUANU"],"040310":["CARAVELI","JAQUI"],"040311":["CARAVELI","LOMAS"],"040312":["CARAVELI","QUICACHA"],"040313":["CARAVELI","YAUCA"],"040402":["CASTILLA","ANDAGUA"],"040401":["CASTILLA","APLAO"],"040403":["CASTILLA","AYO"],"040404":["CASTILLA","CHACHAS"],"040405":["CASTILLA","CHILCAYMARCA"],"040406":["CASTILLA","CHOCO"],"040407":["CASTILLA","HUANCARQUI"],"040408":["CASTILLA","MACHAGUAY"],"040409":["CASTILLA","ORCOPAMPA"],"040410":["CASTILLA","PAMPACOLCA"],"040411":["CASTILLA","TIPAN"],"040412":["CASTILLA","UÑON"],"040413":["CASTILLA","URACA"],"040414":["CASTILLA","VIRACO"],"040502":["CAYLLOMA","ACHOMA"],"040503":["CAYLLOMA","CABANACONDE"],"040504":["CAYLLOMA","CALLALLI"],"040505":["CAYLLOMA","CAYLLOMA"],"040501":["CAYLLOMA","CHIVAY"],"040506":["CAYLLOMA","COPORAQUE"],"040507":["CAYLLOMA","HUAMBO"],"040508":["CAYLLOMA","HUANCA"],"040509":["CAYLLOMA","ICHUPAMPA"],"040510":["CAYLLOMA","LARI"],"040511":["CAYLLOMA","LLUTA"],"040512":["CAYLLOMA","MACA"],"040513":["CAYLLOMA","MADRIGAL"],"040520":["CAYLLOMA","MAJES"],"040514":["CAYLLOMA","SAN ANTONIO DE CHUCA"],"040515":["CAYLLOMA","SIBAYO"],"040516":["CAYLLOMA","TAPAY"],"040517":["CAYLLOMA","TISCO"],"040518":["CAYLLOMA","TUTI"],"040519":["CAYLLOMA","YANQUE"],"040602":["CONDESUYOS","ANDARAY"],"040603":["CONDESUYOS","CAYARANI"],"040604":["CONDESUYOS","CHICHAS"],"040601":["CONDESUYOS","CHUQUIBAMBA"],"040605":["CONDESUYOS","IRAY"],"040606":["CONDESUYOS","RIO GRANDE"],"040607":["CONDESUYOS","SALAMANCA"],"040608":["CONDESUYOS","YANAQUIHUA"],"040702":["ISLAY","COCACHACRA"],"040703":["ISLAY","DEAN VALDIVIA"],"040704":["ISLAY","ISLAY"],"040705":["ISLAY","MEJIA"],"040701":["ISLAY","MOLLENDO"],"040706":["ISLAY","PUNTA DE BOMBON"],"040802":["LA UNION","ALCA"],"040803":["LA UNION","CHARCANA"],"040801":["LA UNION","COTAHUASI"],"040804":["LA UNION","HUAYNACOTAS"],"040805":["LA UNION","PAMPAMARCA"],"040806":["LA UNION","PUYCA"],"040807":["LA UNION","QUECHUALLA"],"040808":["LA UNION","SAYLA"],"040809":["LA UNION","TAURIA"],"040810":["LA UNION","TOMEPAMPA"],"040811":["LA UNION","TORO"],"180203":["GENERAL SANCHEZ CERRO","COALAQUE"],"180205":["GENERAL SANCHEZ CERRO","LA CAPILLA"],"180207":["GENERAL SANCHEZ CERRO","MATALAQUE"],"180201":["GENERAL SANCHEZ CERRO","OMATE"],"180208":["GENERAL SANCHEZ CERRO","PUQUINA"],"180210":["GENERAL SANCHEZ CERRO","UBINAS"],"130201":["ASCOPE","ASCOPE"],"130208":["ASCOPE","CASA GRANDE"],"130202":["ASCOPE","CHICAMA"],"130203":["ASCOPE","CHOCOPE"],"130204":["ASCOPE","MAGDALENA DE CAO"],"130205":["ASCOPE","PAIJAN"],"130206":["ASCOPE","RAZURI"],"130207":["ASCOPE","SANTIAGO DE CAO"],"130302":["BOLIVAR","BAMBAMARCA"],"130301":["BOLIVAR","BOLIVAR"],"130303":["BOLIVAR","CONDORMARCA"],"130304":["BOLIVAR","LONGOTEA"],"130305":["BOLIVAR","UCHUMARCA"],"130306":["BOLIVAR","UCUNCHA"],"130401":["CHEPEN","CHEPEN"],"130402":["CHEPEN","PACANGA"],"130403":["CHEPEN","PUEBLO NUEVO"],"131101":["GRAN CHIMU","CASCAS"],"131102":["GRAN CHIMU","LUCMA"],"131103":["GRAN CHIMU","MARMOT"],"131104":["GRAN CHIMU","SAYAPULLO"],"130502":["JULCAN","CALAMARCA"],"130503":["JULCAN","CARABAMBA"],"130504":["JULCAN","HUASO"],"130501":["JULCAN","JULCAN"],"130602":["OTUZCO","AGALLPAMPA"],"130604":["OTUZCO","CHARAT"],"130605":["OTUZCO","HUARANCHAL"],"130606":["OTUZCO","LA CUESTA"],"130608":["OTUZCO","MACHE"],"130601":["OTUZCO","OTUZCO"],"130610":["OTUZCO","PARANDAY"],"130611":["OTUZCO","SALPO"],"130613":["OTUZCO","SINSICAP"],"130614":["OTUZCO","USQUIL"],"130702":["PACASMAYO","GUADALUPE"],"130703":["PACASMAYO","JEQUETEPEQUE"],"130704":["PACASMAYO","PACASMAYO"],"130705":["PACASMAYO","SAN JOSE"],"130701":["PACASMAYO","SAN PEDRO DE LLOC"],"130802":["PATAZ","BULDIBUYO"],"130803":["PATAZ","CHILLIA"],"130804":["PATAZ","HUANCASPATA"],"130805":["PATAZ","HUAYLILLAS"],"130806":["PATAZ","HUAYO"],"130807":["PATAZ","ONGON"],"130808":["PATAZ","PARCOY"],"130809":["PATAZ","PATAZ"],"130810":["PATAZ","PIAS"],"130811":["PATAZ","SANTIAGO DE CHALLAS"],"130812":["PATAZ","TAURIJA"],"130801":["PATAZ","TAYABAMBA"],"130813":["PATAZ","URPAY"],"130902":["SANCHEZ CARRION","CHUGAY"],"130903":["SANCHEZ CARRION","COCHORCO"],"130904":["SANCHEZ CARRION","CURGOS"],"130901":["SANCHEZ CARRION","HUAMACHUCO"],"130905":["SANCHEZ CARRION","MARCABAL"],"130906":["SANCHEZ CARRION","SANAGORAN"],"130907":["SANCHEZ CARRION","SARIN"],"130908":["SANCHEZ CARRION","SARTIMBAMBA"],"131002":["SANTIAGO DE CHUCO","ANGASMARCA"],"131003":["SANTIAGO DE CHUCO","CACHICADAN"],"131004":["SANTIAGO DE CHUCO","MOLLEBAMBA"],"131005":["SANTIAGO DE CHUCO","MOLLEPATA"],"131006":["SANTIAGO DE CHUCO","QUIRUVILCA"],"131007":["SANTIAGO DE CHUCO","SANTA CRUZ DE CHUCA"],"131001":["SANTIAGO DE CHUCO","SANTIAGO DE CHUCO"],"131008":["SANTIAGO DE CHUCO","SITABAMBA"],"130102":["TRUJILLO","EL PORVENIR"],"130103":["TRUJILLO","FLORENCIA DE MORA"],"130104":["TRUJILLO","HUANCHACO"],"130105":["TRUJILLO","LA ESPERANZA"],"130106":["TRUJILLO","LAREDO"],"130107":["TRUJILLO","MOCHE"],"130108":["TRUJILLO","POROTO"],"130109":["TRUJILLO","SALAVERRY"],"130110":["TRUJILLO","SIMBAL"],"130101":["TRUJILLO","TRUJILLO"],"130111":["TRUJILLO","VICTOR LARCO HERRERA"],"131202":["VIRU","CHAO"],"131203":["VIRU","GUADALUPITO"],"131201":["VIRU","VIRU"],"050201":["CANGALLO","CANGALLO"],"050202":["CANGALLO","CHUSCHI"],"050203":["CANGALLO","LOS MOROCHUCOS"],"050204":["CANGALLO","MARIA PARADO DE BELLIDO"],"050205":["CANGALLO","PARAS"],"050206":["CANGALLO","TOTOS"],"050102":["HUAMANGA","ACOCRO"],"050103":["HUAMANGA","ACOS VINCHOS"],"050116":["HUAMANGA","ANDRES AVELINO CACERES DORREGARAY"],"050101":["HUAMANGA","AYACUCHO"],"050104":["HUAMANGA","CARMEN ALTO"],"050105":["HUAMANGA","CHIARA"],"050115":["HUAMANGA","JESUS NAZARENO"],"050106":["HUAMANGA","OCROS"],"050107":["HUAMANGA","PACAYCASA"],"050108":["HUAMANGA","QUINUA"],"050109":["HUAMANGA","SAN JOSE DE TICLLAS"],"050110":["HUAMANGA","SAN JUAN BAUTISTA"],"050111":["HUAMANGA","SANTIAGO DE PISCHA"],"050112":["HUAMANGA","SOCOS"],"050113":["HUAMANGA","TAMBILLO"],"050114":["HUAMANGA","VINCHOS"],"050302":["HUANCA SANCOS","CARAPO"],"050303":["HUANCA SANCOS","SACSAMARCA"],"050301":["HUANCA SANCOS","SANCOS"],"050304":["HUANCA SANCOS","SANTIAGO DE LUCANAMARCA"],"050402":["HUANTA","AYAHUANCO"],"050409":["HUANTA","CANAYRE"],"050412":["HUANTA","CHACA"],"050403":["HUANTA","HUAMANGUILLA"],"050401":["HUANTA","HUANTA"],"050404":["HUANTA","IGUAIN"],"050408":["HUANTA","LLOCHEGUA"],"050405":["HUANTA","LURICOCHA"],"050411":["HUANTA","PUCACOLPA"],"050413":["HUANTA","PUTIS"],"050406":["HUANTA","SANTILLANA"],"050407":["HUANTA","SIVIA"],"050410":["HUANTA","UCHURACCAY"],"050510":["LA MAR","ANCHIHUAY"],"050502":["LA MAR","ANCO"],"050503":["LA MAR","AYNA"],"050504":["LA MAR","CHILCAS"],"050505":["LA MAR","CHUNGUI"],"050506":["LA MAR","LUIS CARRANZA"],"050514":["LA MAR","NINABAMBA"],"050511":["LA MAR","ORONCCOY"],"050515":["LA MAR","PATIBAMBA"],"050513":["LA MAR","RIO MAGDALENA"],"050509":["LA MAR","SAMUGARI"],"050501":["LA MAR","SAN MIGUEL"],"050507":["LA MAR","SANTA ROSA"],"050508":["LA MAR","TAMBO"],"050512":["LA MAR","UNION PROGRESO"],"050602":["LUCANAS","AUCARA"],"050603":["LUCANAS","CABANA"],"050604":["LUCANAS","CARMEN SALCEDO"],"050605":["LUCANAS","CHAVIÑA"],"050606":["LUCANAS","CHIPAO"],"050607":["LUCANAS","HUAC-HUAS"],"050608":["LUCANAS","LARAMATE"],"050609":["LUCANAS","LEONCIO PRADO"],"050610":["LUCANAS","LLAUTA"],"050611":["LUCANAS","LUCANAS"],"050612":["LUCANAS","OCAÑA"],"050613":["LUCANAS","OTOCA"],"050601":["LUCANAS","PUQUIO"],"050614":["LUCANAS","SAISA"],"050615":["LUCANAS","SAN CRISTOBAL"],"050616":["LUCANAS","SAN JUAN"],"050617":["LUCANAS","SAN PEDRO"],"050618":["LUCANAS","SAN PEDRO DE PALCO"],"050619":["LUCANAS","SANCOS"],"050620":["LUCANAS","SANTA ANA DE HUAYCAHUACHO"],"050621":["LUCANAS","SANTA LUCIA"],"050702":["PARINACOCHAS","CHUMPI"],"050701":["PARINACOCHAS","CORACORA"],"050703":["PARINACOCHAS","CORONEL CASTAÑEDA"],"050704":["PARINACOCHAS","PACAPAUSA"],"050705":["PARINACOCHAS","PULLO"],"050706":["PARINACOCHAS","PUYUSCA"],"050707":["PARINACOCHAS","SAN FRANCISCO DE RAVACAYCO"],"050708":["PARINACOCHAS","UPAHUACHO"],"050802":["PAUCAR DEL SARA SARA","COLTA"],"050803":["PAUCAR DEL SARA SARA","CORCULLA"],"050804":["PAUCAR DEL SARA SARA","LAMPA"],"050805":["PAUCAR DEL SARA SARA","MARCABAMBA"],"050806":["PAUCAR DEL SARA SARA","OYOLO"],"050807":["PAUCAR DEL SARA SARA","PARARCA"],"050801":["PAUCAR DEL SARA SARA","PAUSA"],"050808":["PAUCAR DEL SARA SARA","SAN JAVIER DE ALPABAMBA"],"050809":["PAUCAR DEL SARA SARA","SAN JOSE DE USHUA"],"050810":["PAUCAR DEL SARA SARA","SARA SARA"],"050902":["SUCRE","BELEN"],"050903":["SUCRE","CHALCOS"],"050904":["SUCRE","CHILCAYOC"],"050905":["SUCRE","HUACAÑA"],"050906":["SUCRE","MORCOLLA"],"050907":["SUCRE","PAICO"],"050901":["SUCRE","QUEROBAMBA"],"050908":["SUCRE","SAN PEDRO DE LARCAY"],"050909":["SUCRE","SAN SALVADOR DE QUIJE"],"050910":["SUCRE","SANTIAGO DE PAUCARAY"],"050911":["SUCRE","SORAS"],"051002":["VICTOR FAJARDO","ALCAMENCA"],"051003":["VICTOR FAJARDO","APONGO"],"051004":["VICTOR FAJARDO","ASQUIPATA"],"051005":["VICTOR FAJARDO","CANARIA"],"051006":["VICTOR FAJARDO","CAYARA"],"051007":["VICTOR FAJARDO","COLCA"],"051008":["VICTOR FAJARDO","HUAMANQUIQUIA"],"051001":["VICTOR FAJARDO","HUANCAPI"],"051009":["VICTOR FAJARDO","HUANCARAYLLA"],"051010":["VICTOR FAJARDO","HUAYA"],"051011":["VICTOR FAJARDO","SARHUA"],"051012":["VICTOR FAJARDO","VILCANCHOS"],"051102":["VILCAS HUAMAN","ACCOMARCA"],"051103":["VILCAS HUAMAN","CARHUANCA"],"051104":["VILCAS HUAMAN","CONCEPCION"],"051105":["VILCAS HUAMAN","HUAMBALPA"],"051106":["VILCAS HUAMAN","INDEPENDENCIA"],"051107":["VILCAS HUAMAN","SAURAMA"],"051101":["VILCAS HUAMAN","VILCAS HUAMAN"],"051108":["VILCAS HUAMAN","VISCHONGO"],"080907":["LA CONVENCION","KIMBIRI"],"080910":["LA CONVENCION","PICHARI"],"060202":["CAJABAMBA","CACHACHI"],"060201":["CAJABAMBA","CAJABAMBA"],"060203":["CAJABAMBA","CONDEBAMBA"],"060204":["CAJABAMBA","SITACOCHA"],"060102":["CAJAMARCA","ASUNCION"],"060101":["CAJAMARCA","CAJAMARCA"],"060103":["CAJAMARCA","CHETILLA"],"060104":["CAJAMARCA","COSPAN"],"060105":["CAJAMARCA","ENCAÑADA"],"060106":["CAJAMARCA","JESUS"],"060107":["CAJAMARCA","LLACANORA"],"060108":["CAJAMARCA","LOS BAÑOS DEL INCA"],"060109":["CAJAMARCA","MAGDALENA"],"060110":["CAJAMARCA","MATARA"],"060111":["CAJAMARCA","NAMORA"],"060112":["CAJAMARCA","SAN JUAN"],"060301":["CELENDIN","CELENDIN"],"060302":["CELENDIN","CHUMUCH"],"060303":["CELENDIN","CORTEGANA"],"060304":["CELENDIN","HUASMIN"],"060305":["CELENDIN","JORGE CHAVEZ"],"060306":["CELENDIN","JOSE GALVEZ"],"060312":["CELENDIN","LA LIBERTAD DE PALLAN"],"060307":["CELENDIN","MIGUEL IGLESIAS"],"060308":["CELENDIN","OXAMARCA"],"060309":["CELENDIN","SOROCHUCO"],"060310":["CELENDIN","SUCRE"],"060311":["CELENDIN","UTCO"],"060402":["CHOTA","ANGUIA"],"060403":["CHOTA","CHADIN"],"060419":["CHOTA","CHALAMARCA"],"060404":["CHOTA","CHIGUIRIP"],"060405":["CHOTA","CHIMBAN"],"060406":["CHOTA","CHOROPAMPA"],"060401":["CHOTA","CHOTA"],"060407":["CHOTA","COCHABAMBA"],"060408":["CHOTA","CONCHAN"],"060409":["CHOTA","HUAMBOS"],"060410":["CHOTA","LAJAS"],"060411":["CHOTA","LLAMA"],"060412":["CHOTA","MIRACOSTA"],"060413":["CHOTA","PACCHA"],"060414":["CHOTA","PION"],"060415":["CHOTA","QUEROCOTO"],"060416":["CHOTA","SAN JUAN DE LICUPIS"],"060417":["CHOTA","TACABAMBA"],"060418":["CHOTA","TOCMOCHE"],"060502":["CONTUMAZA","CHILETE"],"060501":["CONTUMAZA","CONTUMAZA"],"060503":["CONTUMAZA","CUPISNIQUE"],"060504":["CONTUMAZA","GUZMANGO"],"060505":["CONTUMAZA","SAN BENITO"],"060506":["CONTUMAZA","SANTA CRUZ DE TOLED"],"060507":["CONTUMAZA","TANTARICA"],"060508":["CONTUMAZA","YONAN"],"060602":["CUTERVO","CALLAYUC"],"060603":["CUTERVO","CHOROS"],"060604":["CUTERVO","CUJILLO"],"060601":["CUTERVO","CUTERVO"],"060605":["CUTERVO","LA RAMADA"],"060606":["CUTERVO","PIMPINGOS"],"060607":["CUTERVO","QUEROCOTILLO"],"060608":["CUTERVO","SAN ANDRES DE CUTERVO"],"060609":["CUTERVO","SAN JUAN DE CUTERVO"],"060610":["CUTERVO","SAN LUIS DE LUCMA"],"060611":["CUTERVO","SANTA CRUZ"],"060612":["CUTERVO","SANTO DOMINGO DE LA CAPILLA"],"060613":["CUTERVO","SANTO TOMAS"],"060614":["CUTERVO","SOCOTA"],"060615":["CUTERVO","TORIBIO CASANOVA"],"060701":["HUALGAYOC","BAMBAMARCA"],"060702":["HUALGAYOC","CHUGUR"],"060703":["HUALGAYOC","HUALGAYOC"],"060802":["JAEN","BELLAVISTA"],"060803":["JAEN","CHONTALI"],"060804":["JAEN","COLASAY"],"060805":["JAEN","HUABAL"],"060801":["JAEN","JAEN"],"060806":["JAEN","LAS PIRIAS"],"060807":["JAEN","POMAHUACA"],"060808":["JAEN","PUCARA"],"060809":["JAEN","SALLIQUE"],"060810":["JAEN","SAN FELIPE"],"060811":["JAEN","SAN JOSE DEL ALTO"],"060812":["JAEN","SANTA ROSA"],"060902":["SAN IGNACIO","CHIRINOS"],"060903":["SAN IGNACIO","HUARANGO"],"060904":["SAN IGNACIO","LA COIPA"],"060905":["SAN IGNACIO","NAMBALLE"],"060901":["SAN IGNACIO","SAN IGNACIO"],"060906":["SAN IGNACIO","SAN JOSE DE LOURDES"],"060907":["SAN IGNACIO","TABACONAS"],"061002":["SAN MARCOS","CHANCAY"],"061003":["SAN MARCOS","EDUARDO VILLANUEVA"],"061004":["SAN MARCOS","GREGORIO PITA"],"061005":["SAN MARCOS","ICHOCAN"],"061006":["SAN MARCOS","JOSE MANUEL QUIROZ"],"061007":["SAN MARCOS","JOSE SABOGAL"],"061001":["SAN MARCOS","PEDRO GALVEZ"],"061102":["SAN MIGUEL","BOLIVAR"],"061103":["SAN MIGUEL","CALQUIS"],"061104":["SAN MIGUEL","CATILLUC"],"061105":["SAN MIGUEL","EL PRADO"],"061106":["SAN MIGUEL","LA FLORIDA"],"061107":["SAN MIGUEL","LLAPA"],"061108":["SAN MIGUEL","NANCHOC"],"061109":["SAN MIGUEL","NIEPOS"],"061110":["SAN MIGUEL","SAN GREGORIO"],"061101":["SAN MIGUEL","SAN MIGUEL"],"061111":["SAN MIGUEL","SAN SILVESTRE DE COCHAN"],"061112":["SAN MIGUEL","TONGOD"],"061113":["SAN MIGUEL","UNION AGUA BLANCA"],"061202":["SAN PABLO","SAN BERNARDINO"],"061203":["SAN PABLO","SAN LUIS"],"061201":["SAN PABLO","SAN PABLO"],"061204":["SAN PABLO","TUMBADEN"],"061302":["SANTA CRUZ","ANDABAMBA"],"061303":["SANTA CRUZ","CATACHE"],"061304":["SANTA CRUZ","CHANCAYBAÑOS"],"061305":["SANTA CRUZ","LA ESPERANZA"],"061306":["SANTA CRUZ","NINABAMBA"],"061307":["SANTA CRUZ","PULAN"],"061301":["SANTA CRUZ","SANTA CRUZ"],"061308":["SANTA CRUZ","SAUCEPAMPA"],"061309":["SANTA CRUZ","SEXI"],"061310":["SANTA CRUZ","UTICYACU"],"061311":["SANTA CRUZ","YAUYUCAN"],"020802":["CASMA","BUENA VISTA ALTA"],"020801":["CASMA","CASMA"],"020803":["CASMA","COMANDANTE NOEL"],"020804":["CASMA","YAUTAN"],"020902":["CORONGO","ACO"],"020903":["CORONGO","BAMBAS"],"020901":["CORONGO","CORONGO"],"020904":["CORONGO","CUSCA"],"020905":["CORONGO","LA PAMPA"],"020906":["CORONGO","YANAC"],"020907":["CORONGO","YUPAN"],"021102":["HUARMEY","COCHAPETI"],"021103":["HUARMEY","CULEBRAS"],"021101":["HUARMEY","HUARMEY"],"021104":["HUARMEY","HUAYAN"],"021105":["HUARMEY","MALVAS"],"021502":["PALLASCA","BOLOGNESI"],"021501":["PALLASCA","CABANA"],"021503":["PALLASCA","CONCHUCOS"],"021504":["PALLASCA","HUACASCHUQUE"],"021505":["PALLASCA","HUANDOVAL"],"021506":["PALLASCA","LACABAMBA"],"021507":["PALLASCA","LLAPO"],"021508":["PALLASCA","PALLASCA"],"021509":["PALLASCA","PAMPAS"],"021510":["PALLASCA","SANTA ROSA"],"021511":["PALLASCA","TAUCA"],"021802":["SANTA","CACERES DEL PERU"],"021801":["SANTA","CHIMBOTE"],"021803":["SANTA","COISHCO"],"021804":["SANTA","MACATE"],"021805":["SANTA","MORO"],"021806":["SANTA","NEPEÑA"],"021809":["SANTA","NUEVO CHIMBOTE"],"021807":["SANTA","SAMANCO"],"021808":["SANTA","SANTA"],"021902":["SIHUAS","ACOBAMBA"],"021903":["SIHUAS","ALFONSO UGARTE"],"021904":["SIHUAS","CASHAPAMPA"],"021905":["SIHUAS","CHINGALPO"],"021906":["SIHUAS","HUAYLLABAMBA"],"021907":["SIHUAS","QUICHES"],"021908":["SIHUAS","RAGASH"],"021909":["SIHUAS","SAN JUAN"],"021910":["SIHUAS","SICSIBAMBA"],"021901":["SIHUAS","SIHUAS"],"030101":["ABANCAY","ABANCAY"],"030102":["ABANCAY","CHACOCHE"],"030103":["ABANCAY","CIRCA"],"030104":["ABANCAY","CURAHUASI"],"030105":["ABANCAY","HUANIPACA"],"030106":["ABANCAY","LAMBRAMA"],"030107":["ABANCAY","PICHIRHUA"],"030108":["ABANCAY","SAN PEDRO DE CACHORA"],"030109":["ABANCAY","TAMBURCO"],"030201":["ANDAHUAYLAS","ANDAHUAYLAS"],"030202":["ANDAHUAYLAS","ANDARAPA"],"030203":["ANDAHUAYLAS","CHIARA"],"030204":["ANDAHUAYLAS","HUANCARAMA"],"030205":["ANDAHUAYLAS","HUANCARAY"],"030206":["ANDAHUAYLAS","HUAYANA"],"030220":["ANDAHUAYLAS","JOSE MARIA ARGUEDAS"],"030219":["ANDAHUAYLAS","KAQUIABAMBA"],"030207":["ANDAHUAYLAS","KISHUARA"],"030208":["ANDAHUAYLAS","PACOBAMBA"],"030209":["ANDAHUAYLAS","PACUCHA"],"030210":["ANDAHUAYLAS","PAMPACHIRI"],"030211":["ANDAHUAYLAS","POMACOCHA"],"030212":["ANDAHUAYLAS","SAN ANTONIO DE CACHI"],"030213":["ANDAHUAYLAS","SAN JERONIMO"],"030214":["ANDAHUAYLAS","SAN MIGUEL DE CHACCRAMPA"],"030215":["ANDAHUAYLAS","SANTA MARIA DE CHICMO"],"030216":["ANDAHUAYLAS","TALAVERA"],"030217":["ANDAHUAYLAS","TUMAY HUARACA"],"030218":["ANDAHUAYLAS","TURPO"],"030301":["ANTABAMBA","ANTABAMBA"],"030302":["ANTABAMBA","EL ORO"],"030303":["ANTABAMBA","HUAQUIRCA"],"030304":["ANTABAMBA","JUAN ESPINOZA MEDRANO"],"030305":["ANTABAMBA","OROPESA"],"030306":["ANTABAMBA","PACHACONAS"],"030307":["ANTABAMBA","SABAINO"],"030402":["AYMARAES","CAPAYA"],"030403":["AYMARAES","CARAYBAMBA"],"030401":["AYMARAES","CHALHUANCA"],"030404":["AYMARAES","CHAPIMARCA"],"030405":["AYMARAES","COLCABAMBA"],"030406":["AYMARAES","COTARUSE"],"030407":["AYMARAES","HUAYLLO"],"030408":["AYMARAES","JUSTO APU SAHUARAURA"],"030409":["AYMARAES","LUCRE"],"030410":["AYMARAES","POCOHUANCA"],"030411":["AYMARAES","SAN JUAN DE CHACÑA"],"030412":["AYMARAES","SAÑAYCA"],"030413":["AYMARAES","SORAYA"],"030414":["AYMARAES","TAPAIRIHUA"],"030415":["AYMARAES","TINTAY"],"030416":["AYMARAES","TORAYA"],"030417":["AYMARAES","YANACA"],"030612":["CHINCHEROS","AHUAYRO"],"030602":["CHINCHEROS","ANCO_HUALLO"],"030601":["CHINCHEROS","CHINCHEROS"],"030603":["CHINCHEROS","COCHARCAS"],"030610":["CHINCHEROS","EL PORVENIR"],"030604":["CHINCHEROS","HUACCANA"],"030611":["CHINCHEROS","LOS CHANKAS"],"030605":["CHINCHEROS","OCOBAMBA"],"030606":["CHINCHEROS","ONGOY"],"030608":["CHINCHEROS","RANRACANCHA"],"030609":["CHINCHEROS","ROCCHACC"],"030607":["CHINCHEROS","URANMARCA"],"030506":["COTABAMBAS","CHALLHUAHUACHO"],"030502":["COTABAMBAS","COTABAMBAS"],"030503":["COTABAMBAS","COYLLURQUI"],"030504":["COTABAMBAS","HAQUIRA"],"030505":["COTABAMBAS","MARA"],"030501":["COTABAMBAS","TAMBOBAMBA"],"030701":["GRAU","CHUQUIBAMBILLA"],"030714":["GRAU","CURASCO"],"030702":["GRAU","CURPAHUASI"],"030703":["GRAU","GAMARRA"],"030704":["GRAU","HUAYLLATI"],"030705":["GRAU","MAMARA"],"030706":["GRAU","MICAELA BASTIDAS"],"030707":["GRAU","PATAYPAMPA"],"030708":["GRAU","PROGRESO"],"030709":["GRAU","SAN ANTONIO"],"030710":["GRAU","SANTA ROSA"],"030711":["GRAU","TURPAY"],"030712":["GRAU","VILCABAMBA"],"030713":["GRAU","VIRUNDO"],"080201":["ACOMAYO","ACOMAYO"],"080202":["ACOMAYO","ACOPIA"],"080203":["ACOMAYO","ACOS"],"080204":["ACOMAYO","MOSOC LLACTA"],"080205":["ACOMAYO","POMACANCHI"],"080206":["ACOMAYO","RONDOCAN"],"080207":["ACOMAYO","SANGARARA"],"080302":["ANTA","ANCAHUASI"],"080301":["ANTA","ANTA"],"080303":["ANTA","CACHIMAYO"],"080304":["ANTA","CHINCHAYPUJIO"],"080305":["ANTA","HUAROCONDO"],"080306":["ANTA","LIMATAMBO"],"080307":["ANTA","MOLLEPATA"],"080308":["ANTA","PUCYURA"],"080309":["ANTA","ZURITE"],"080401":["CALCA","CALCA"],"080402":["CALCA","COYA"],"080403":["CALCA","LAMAY"],"080404":["CALCA","LARES"],"080405":["CALCA","PISAC"],"080406":["CALCA","SAN SALVADOR"],"080407":["CALCA","TARAY"],"080408":["CALCA","YANATILE"],"080502":["CANAS","CHECCA"],"080503":["CANAS","KUNTURKANKI"],"080504":["CANAS","LANGUI"],"080505":["CANAS","LAYO"],"080506":["CANAS","PAMPAMARCA"],"080507":["CANAS","QUEHUE"],"080508":["CANAS","TUPAC AMARU"],"080501":["CANAS","YANAOCA"],"080602":["CANCHIS","CHECACUPE"],"080603":["CANCHIS","COMBAPATA"],"080604":["CANCHIS","MARANGANI"],"080605":["CANCHIS","PITUMARCA"],"080606":["CANCHIS","SAN PABLO"],"080607":["CANCHIS","SAN PEDRO"],"080601":["CANCHIS","SICUANI"],"080608":["CANCHIS","TINTA"],"080702":["CHUMBIVILCAS","CAPACMARCA"],"080703":["CHUMBIVILCAS","CHAMACA"],"080704":["CHUMBIVILCAS","COLQUEMARCA"],"080705":["CHUMBIVILCAS","LIVITACA"],"080706":["CHUMBIVILCAS","LLUSCO"],"080707":["CHUMBIVILCAS","QUIÑOTA"],"080701":["CHUMBIVILCAS","SANTO TOMAS"],"080708":["CHUMBIVILCAS","VELILLE"],"080102":["CUSCO","CCORCA"],"080101":["CUSCO","CUSCO"],"080103":["CUSCO","POROY"],"080104":["CUSCO","SAN JERONIMO"],"080105":["CUSCO","SAN SEBASTIAN"],"080106":["CUSCO","SANTIAGO"],"080107":["CUSCO","SAYLLA"],"080108":["CUSCO","WANCHAQ"],"080808":["ESPINAR","ALTO PICHIGUA"],"080802":["ESPINAR","CONDOROMA"],"080803":["ESPINAR","COPORAQUE"],"080801":["ESPINAR","ESPINAR"],"080804":["ESPINAR","OCORURO"],"080805":["ESPINAR","PALLPATA"],"080806":["ESPINAR","PICHIGUA"],"080807":["ESPINAR","SUYCKUTAMBO"],"080916":["LA CONVENCION","CIELO PUNCO"],"080902":["LA CONVENCION","ECHARATE"],"080903":["LA CONVENCION","HUAYOPATA"],"080911":["LA CONVENCION","INKAWASI"],"080915":["LA CONVENCION","KUMPIRUSHIATO"],"080917":["LA CONVENCION","MANITEA"],"080904":["LA CONVENCION","MARANURA"],"080914":["LA CONVENCION","MEGANTONI"],"080905":["LA CONVENCION","OCOBAMBA"],"080906":["LA CONVENCION","QUELLOUNO"],"080901":["LA CONVENCION","SANTA ANA"],"080908":["LA CONVENCION","SANTA TERESA"],"080918":["LA CONVENCION","UNION ASHANINKA"],"080909":["LA CONVENCION","VILCABAMBA"],"080913":["LA CONVENCION","VILLA KINTIARINA"],"080912":["LA CONVENCION","VILLA VIRGEN"],"081002":["PARURO","ACCHA"],"081003":["PARURO","CCAPI"],"081004":["PARURO","COLCHA"],"081005":["PARURO","HUANOQUITE"],"081006":["PARURO","OMACHA"],"081007":["PARURO","PACCARITAMBO"],"081001":["PARURO","PARURO"],"081008":["PARURO","PILLPINTO"],"081009":["PARURO","YAURISQUE"],"081102":["PAUCARTAMBO","CAICAY"],"081103":["PAUCARTAMBO","CHALLABAMBA"],"081104":["PAUCARTAMBO","COLQUEPATA"],"081105":["PAUCARTAMBO","HUANCARANI"],"081106":["PAUCARTAMBO","KOSÑIPATA"],"081101":["PAUCARTAMBO","PAUCARTAMBO"],"081202":["QUISPICANCHI","ANDAHUAYLILLAS"],"081203":["QUISPICANCHI","CAMANTI"],"081204":["QUISPICANCHI","CCARHUAYO"],"081205":["QUISPICANCHI","CCATCA"],"081206":["QUISPICANCHI","CUSIPATA"],"081207":["QUISPICANCHI","HUARO"],"081208":["QUISPICANCHI","LUCRE"],"081209":["QUISPICANCHI","MARCAPATA"],"081210":["QUISPICANCHI","OCONGATE"],"081211":["QUISPICANCHI","OROPESA"],"081212":["QUISPICANCHI","QUIQUIJANA"],"081201":["QUISPICANCHI","URCOS"],"081302":["URUBAMBA","CHINCHERO"],"081303":["URUBAMBA","HUAYLLABAMBA"],"081304":["URUBAMBA","MACHUPICCHU"],"081305":["URUBAMBA","MARAS"],"081306":["URUBAMBA","OLLANTAYTAMBO"],"081301":["URUBAMBA","URUBAMBA"],"081307":["URUBAMBA","YUCAY"],"150201":["BARRANCA","BARRANCA"],"150202":["BARRANCA","PARAMONGA"],"150203":["BARRANCA","PATIVILCA"],"150204":["BARRANCA","SUPE"],"150205":["BARRANCA","SUPE PUERTO"],"150301":["CAJATAMBO","CAJATAMBO"],"150302":["CAJATAMBO","COPA"],"150303":["CAJATAMBO","GORGOR"],"150304":["CAJATAMBO","HUANCAPON"],"150305":["CAJATAMBO","MANAS"],"150602":["HUARAL","ATAVILLOS ALTO"],"150603":["HUARAL","ATAVILLOS BAJO"],"150604":["HUARAL","AUCALLAMA"],"150605":["HUARAL","CHANCAY"],"150601":["HUARAL","HUARAL"],"150606":["HUARAL","IHUARI"],"150607":["HUARAL","LAMPIAN"],"150608":["HUARAL","PACARAOS"],"150609":["HUARAL","SAN MIGUEL DE ACOS"],"150610":["HUARAL","SANTA CRUZ DE ANDAMARCA"],"150611":["HUARAL","SUMBILCA"],"150612":["HUARAL","VEINTISIETE DE NOVIEMBRE"],"150802":["HUAURA","AMBAR"],"150803":["HUAURA","CALETA DE CARQUIN"],"150804":["HUAURA","CHECRAS"],"150801":["HUAURA","HUACHO"],"150805":["HUAURA","HUALMAY"],"150806":["HUAURA","HUAURA"],"150807":["HUAURA","LEONCIO PRADO"],"150808":["HUAURA","PACCHO"],"150809":["HUAURA","SANTA LEONOR"],"150810":["HUAURA","SANTA MARIA"],"150811":["HUAURA","SAYAN"],"150812":["HUAURA","VEGUETA"],"150902":["OYON","ANDAJES"],"150903":["OYON","CAUJUL"],"150904":["OYON","COCHAMARCA"],"150905":["OYON","NAVAN"],"150901":["OYON","OYON"],"150906":["OYON","PACHANGARA"],"100201":["AMBO","AMBO"],"100202":["AMBO","CAYNA"],"100203":["AMBO","COLPAS"],"100204":["AMBO","CONCHAMARCA"],"100205":["AMBO","HUACAR"],"100206":["AMBO","SAN FRANCISCO"],"100207":["AMBO","SAN RAFAEL"],"100208":["AMBO","TOMAY KICHWA"],"100307":["DOS DE MAYO","CHUQUIS"],"100301":["DOS DE MAYO","LA UNION"],"100311":["DOS DE MAYO","MARIAS"],"100313":["DOS DE MAYO","PACHAS"],"100316":["DOS DE MAYO","QUIVILLA"],"100317":["DOS DE MAYO","RIPAN"],"100321":["DOS DE MAYO","SHUNQUI"],"100322":["DOS DE MAYO","SILLAPATA"],"100323":["DOS DE MAYO","YANAS"],"100402":["HUACAYBAMBA","CANCHABAMBA"],"100403":["HUACAYBAMBA","COCHABAMBA"],"100401":["HUACAYBAMBA","HUACAYBAMBA"],"100404":["HUACAYBAMBA","PINRA"],"100502":["HUAMALIES","ARANCAY"],"100503":["HUAMALIES","CHAVIN DE PARIARCA"],"100504":["HUAMALIES","JACAS GRANDE"],"100505":["HUAMALIES","JIRCAN"],"100501":["HUAMALIES","LLATA"],"100506":["HUAMALIES","MIRAFLORES"],"100507":["HUAMALIES","MONZON"],"100508":["HUAMALIES","PUNCHAO"],"100509":["HUAMALIES","PUÑOS"],"100510":["HUAMALIES","SINGA"],"100511":["HUAMALIES","TANTAMAYO"],"100102":["HUANUCO","AMARILIS"],"100103":["HUANUCO","CHINCHAO"],"100104":["HUANUCO","CHURUBAMBA"],"100101":["HUANUCO","HUANUCO"],"100105":["HUANUCO","MARGOS"],"100111":["HUANUCO","PILLCO MARCA"],"100106":["HUANUCO","QUISQUI (KICHKI)"],"100107":["HUANUCO","SAN FRANCISCO DE CAYRAN"],"100113":["HUANUCO","SAN PABLO DE PILLAO"],"100108":["HUANUCO","SAN PEDRO DE CHAULAN"],"100109":["HUANUCO","SANTA MARIA DEL VALLE"],"100112":["HUANUCO","YACUS"],"100110":["HUANUCO","YARUMAYO"],"101002":["LAURICOCHA","BAÑOS"],"101001":["LAURICOCHA","JESUS"],"101003":["LAURICOCHA","JIVIA"],"101004":["LAURICOCHA","QUEROPALCA"],"101005":["LAURICOCHA","RONDOS"],"101006":["LAURICOCHA","SAN FRANCISCO DE ASIS"],"101007":["LAURICOCHA","SAN MIGUEL DE CAURI"],"100608":["LEONCIO PRADO","CASTILLO GRANDE"],"100602":["LEONCIO PRADO","DANIEL ALOMIA ROBLES"],"100603":["LEONCIO PRADO","HERMILIO VALDIZAN"],"100604":["LEONCIO PRADO","JOSE CRESPO Y CASTILLO"],"100605":["LEONCIO PRADO","LUYANDO"],"100606":["LEONCIO PRADO","MARIANO DAMASO BERAUN"],"100607":["LEONCIO PRADO","PUCAYACU"],"100609":["LEONCIO PRADO","PUEBLO NUEVO"],"100601":["LEONCIO PRADO","RUPA-RUPA"],"100610":["LEONCIO PRADO","SANTO DOMINGO DE ANDA"],"100702":["MARAÑON","CHOLON"],"100701":["MARAÑON","HUACRACHUCO"],"100704":["MARAÑON","LA MORADA"],"100703":["MARAÑON","SAN BUENAVENTURA"],"100705":["MARAÑON","SANTA ROSA DE ALTO YANAJANCA"],"100802":["PACHITEA","CHAGLLA"],"100803":["PACHITEA","MOLINO"],"100801":["PACHITEA","PANAO"],"100804":["PACHITEA","UMARI"],"100902":["PUERTO INCA","CODO DEL POZUZO"],"100903":["PUERTO INCA","HONORIA"],"100901":["PUERTO INCA","PUERTO INCA"],"100904":["PUERTO INCA","TOURNAVISTA"],"100905":["PUERTO INCA","YUYAPICHIS"],"101104":["YAROWILCA","Aparicio Pomares"],"101102":["YAROWILCA","CAHUAC"],"101103":["YAROWILCA","CHACABAMBA"],"101101":["YAROWILCA","CHAVINILLO"],"101108":["YAROWILCA","CHORAS"],"101105":["YAROWILCA","JACAS CHICO"],"101106":["YAROWILCA","OBAS"],"101107":["YAROWILCA","PAMPAMARCA"],"190202":["DANIEL ALCIDES CARRION","CHACAYAN"],"190203":["DANIEL ALCIDES CARRION","GOYLLARISQUIZGA"],"190204":["DANIEL ALCIDES CARRION","PAUCAR"],"190205":["DANIEL ALCIDES CARRION","SAN PEDRO DE PILLAO"],"190206":["DANIEL ALCIDES CARRION","SANTA ANA DE TUSI"],"190207":["DANIEL ALCIDES CARRION","TAPUC"],"190208":["DANIEL ALCIDES CARRION","VILCABAMBA"],"190201":["DANIEL ALCIDES CARRION","YANAHUANCA"],"190101":["PASCO","CHAUPIMARCA"],"190102":["PASCO","HUACHON"],"190103":["PASCO","HUARIACA"],"190104":["PASCO","HUAYLLAY"],"190105":["PASCO","NINACACA"],"190106":["PASCO","PALLANCHACRA"],"190107":["PASCO","PAUCARTAMBO"],"190108":["PASCO","SAN FRANCISCO DE ASIS DE YARUSYACAN"],"190109":["PASCO","SIMON BOLIVAR"],"190110":["PASCO","TICLACAYAN"],"190111":["PASCO","TINYAHUARCO"],"190112":["PASCO","VICCO"],"190113":["PASCO","YANACANCHA"],"020201":["AIJA","AIJA"],"020202":["AIJA","CORIS"],"020203":["AIJA","HUACLLAN"],"020204":["AIJA","LA MERCED"],"020205":["AIJA","SUCCHA"],"020302":["ANTONIO RAYMONDI","ACZO"],"020303":["ANTONIO RAYMONDI","CHACCHO"],"020304":["ANTONIO RAYMONDI","CHINGAS"],"020301":["ANTONIO RAYMONDI","LLAMELLIN"],"020305":["ANTONIO RAYMONDI","MIRGAS"],"020306":["ANTONIO RAYMONDI","SAN JUAN DE RONTOY"],"020402":["ASUNCION","ACOCHACA"],"020401":["ASUNCION","CHACAS"],"020502":["BOLOGNESI","ABELARDO PARDO LEZAMETA"],"020503":["BOLOGNESI","ANTONIO RAYMONDI"],"020504":["BOLOGNESI","AQUIA"],"020505":["BOLOGNESI","CAJACAY"],"020506":["BOLOGNESI","CANIS"],"020501":["BOLOGNESI","CHIQUIAN"],"020507":["BOLOGNESI","COLQUIOC"],"020508":["BOLOGNESI","HUALLANCA"],"020509":["BOLOGNESI","HUASTA"],"020510":["BOLOGNESI","HUAYLLACAYAN"],"020511":["BOLOGNESI","LA PRIMAVERA"],"020512":["BOLOGNESI","MANGAS"],"020513":["BOLOGNESI","PACLLON"],"020514":["BOLOGNESI","SAN MIGUEL DE CORPANQUI"],"020515":["BOLOGNESI","TICLLOS"],"020602":["CARHUAZ","ACOPAMPA"],"020603":["CARHUAZ","AMASHCA"],"020604":["CARHUAZ","ANTA"],"020605":["CARHUAZ","ATAQUERO"],"020601":["CARHUAZ","CARHUAZ"],"020606":["CARHUAZ","MARCARA"],"020607":["CARHUAZ","PARIAHUANCA"],"020608":["CARHUAZ","SAN MIGUEL DE ACO"],"020609":["CARHUAZ","SHILLA"],"020610":["CARHUAZ","TINCO"],"020611":["CARHUAZ","YUNGAR"],"020701":["CARLOS FERMIN FITZCARRALD","SAN LUIS"],"020702":["CARLOS FERMIN FITZCARRALD","SAN NICOLAS"],"020703":["CARLOS FERMIN FITZCARRALD","YAUYA"],"020102":["Huaraz","COCHABAMBA"],"020103":["Huaraz","COLCABAMBA"],"020104":["Huaraz","HUANCHAY"],"020101":["Huaraz","HUARAZ"],"020105":["Huaraz","INDEPENDENCIA"],"020106":["Huaraz","JANGAS"],"020107":["Huaraz","LA LIBERTAD"],"020108":["Huaraz","OLLEROS"],"020109":["Huaraz","PAMPAS"],"020110":["Huaraz","PARIACOTO"],"020111":["Huaraz","PIRA"],"020112":["Huaraz","TARICA"],"021002":["HUARI","ANRA"],"021003":["HUARI","CAJAY"],"021004":["HUARI","CHAVIN DE HUANTAR"],"021005":["HUARI","HUACACHI"],"021006":["HUARI","HUACCHIS"],"021007":["HUARI","HUACHIS"],"021008":["HUARI","HUANTAR"],"021001":["HUARI","HUARI"],"021009":["HUARI","MASIN"],"021010":["HUARI","PAUCAS"],"021011":["HUARI","PONTO"],"021012":["HUARI","RAHUAPAMPA"],"021013":["HUARI","RAPAYAN"],"021014":["HUARI","SAN MARCOS"],"021015":["HUARI","SAN PEDRO DE CHANA"],"021016":["HUARI","UCO"],"021201":["HUAYLAS","CARAZ"],"021202":["HUAYLAS","HUALLANCA"],"021203":["HUAYLAS","HUATA"],"021204":["HUAYLAS","HUAYLAS"],"021205":["HUAYLAS","MATO"],"021206":["HUAYLAS","PAMPAROMAS"],"021207":["HUAYLAS","PUEBLO LIBRE"],"021208":["HUAYLAS","SANTA CRUZ"],"021209":["HUAYLAS","SANTO TORIBIO"],"021210":["HUAYLAS","YURACMARCA"],"021302":["MARISCAL LUZURIAGA","CASCA"],"021303":["MARISCAL LUZURIAGA","ELEAZAR GUZMAN BARRON"],"021304":["MARISCAL LUZURIAGA","FIDEL OLIVAS ESCUDERO"],"021305":["MARISCAL LUZURIAGA","LLAMA"],"021306":["MARISCAL LUZURIAGA","LLUMPA"],"021307":["MARISCAL LUZURIAGA","LUCMA"],"021308":["MARISCAL LUZURIAGA","MUSGA"],"021301":["MARISCAL LUZURIAGA","PISCOBAMBA"],"021402":["OCROS","ACAS"],"021403":["OCROS","CAJAMARQUILLA"],"021404":["OCROS","CARHUAPAMPA"],"021405":["OCROS","COCHAS"],"021406":["OCROS","CONGAS"],"021407":["OCROS","LLIPA"],"021401":["OCROS","OCROS"],"021408":["OCROS","SAN CRISTOBAL DE RAJAN"],"021409":["OCROS","SAN PEDRO"],"021410":["OCROS","SANTIAGO DE CHILCAS"],"021602":["POMABAMBA","HUAYLLAN"],"021603":["POMABAMBA","PAROBAMBA"],"021601":["POMABAMBA","POMABAMBA"],"021604":["POMABAMBA","QUINUABAMBA"],"021702":["RECUAY","CATAC"],"021703":["RECUAY","COTAPARACO"],"021704":["RECUAY","HUAYLLAPAMPA"],"021705":["RECUAY","LLACLLIN"],"021706":["RECUAY","MARCA"],"021707":["RECUAY","PAMPAS CHICO"],"021708":["RECUAY","PARARIN"],"021701":["RECUAY","RECUAY"],"021709":["RECUAY","TAPACOCHA"],"021710":["RECUAY","TICAPAMPA"],"022002":["YUNGAY","CASCAPARA"],"022003":["YUNGAY","MANCOS"],"022004":["YUNGAY","MATACOTO"],"022005":["YUNGAY","QUILLO"],"022006":["YUNGAY","RANRAHIRCA"],"022007":["YUNGAY","SHUPLUY"],"022008":["YUNGAY","YANAMA"],"022001":["YUNGAY","YUNGAY"],"090602":["HUAYTARA","AYAVI"],"090603":["HUAYTARA","CORDOVA"],"090604":["HUAYTARA","HUAYACUNDO ARMA"],"090601":["HUAYTARA","HUAYTARA"],"090605":["HUAYTARA","LARAMARCA"],"090606":["HUAYTARA","OCOYO"],"090607":["HUAYTARA","PILPICHACA"],"090608":["HUAYTARA","QUERCO"],"090609":["HUAYTARA","QUITO-ARMA"],"090610":["HUAYTARA","SAN ANTONIO DE CUSICANCHA"],"090611":["HUAYTARA","SAN FRANCISCO DE SANGAYAICO"],"090612":["HUAYTARA","SAN ISIDRO"],"090613":["HUAYTARA","SANTIAGO DE CHOCORVOS"],"090614":["HUAYTARA","SANTIAGO DE QUIRAHUARA"],"090615":["HUAYTARA","SANTO DOMINGO DE CAPILLAS"],"090616":["HUAYTARA","TAMBO"],"110202":["CHINCHA","ALTO LARAN"],"110203":["CHINCHA","CHAVIN"],"110201":["CHINCHA","CHINCHA ALTA"],"110204":["CHINCHA","CHINCHA BAJA"],"110205":["CHINCHA","EL CARMEN"],"110206":["CHINCHA","GROCIO PRADO"],"110207":["CHINCHA","PUEBLO NUEVO"],"110208":["CHINCHA","SAN JUAN DE YANAC"],"110209":["CHINCHA","SAN PEDRO DE HUACARPANA"],"110210":["CHINCHA","SUNAMPE"],"110211":["CHINCHA","TAMBO DE MORA"],"110101":["ICA","ICA"],"110102":["ICA","LA TINGUIÑA"],"110103":["ICA","LOS AQUIJES"],"110104":["ICA","OCUCAJE"],"110105":["ICA","PACHACUTEC"],"110106":["ICA","PARCONA"],"110107":["ICA","PUEBLO NUEVO"],"110108":["ICA","SALAS"],"110109":["ICA","SAN JOSE DE LOS MOLINOS"],"110110":["ICA","SAN JUAN BAUTISTA"],"110111":["ICA","SANTIAGO"],"110112":["ICA","SUBTANJALLA"],"110113":["ICA","TATE"],"110114":["ICA","YAUCA DEL ROSARIO"],"110302":["NASCA","CHANGUILLO"],"110303":["NASCA","EL INGENIO"],"110304":["NASCA","MARCONA"],"110301":["NASCA","NASCA"],"110305":["NASCA","VISTA ALEGRE"],"110402":["PALPA","LLIPATA"],"110401":["PALPA","PALPA"],"110403":["PALPA","RIO GRANDE"],"110404":["PALPA","SANTA CRUZ"],"110405":["PALPA","TIBILLO"],"110502":["PISCO","HUANCANO"],"110503":["PISCO","HUMAY"],"110504":["PISCO","INDEPENDENCIA"],"110505":["PISCO","PARACAS"],"110501":["PISCO","PISCO"],"110506":["PISCO","SAN ANDRES"],"110507":["PISCO","SAN CLEMENTE"],"110508":["PISCO","TUPAC AMARU INCA"],"210202":["AZANGARO","ACHAYA"],"210203":["AZANGARO","ARAPA"],"210204":["AZANGARO","ASILLO"],"210201":["AZANGARO","AZANGARO"],"210205":["AZANGARO","CAMINACA"],"210206":["AZANGARO","CHUPA"],"210207":["AZANGARO","JOSE DOMINGO CHOQUEHUANCA"],"210208":["AZANGARO","MUÑANI"],"210209":["AZANGARO","POTONI"],"210210":["AZANGARO","SAMAN"],"210211":["AZANGARO","SAN ANTON"],"210212":["AZANGARO","SAN JOSE"],"210213":["AZANGARO","SAN JUAN DE SALINAS"],"210214":["AZANGARO","SANTIAGO DE PUPUJA"],"210215":["AZANGARO","TIRAPATA"],"210302":["CARABAYA","AJOYANI"],"210303":["CARABAYA","AYAPATA"],"210304":["CARABAYA","COASA"],"210305":["CARABAYA","CORANI"],"210306":["CARABAYA","CRUCERO"],"210307":["CARABAYA","ITUATA"],"210301":["CARABAYA","MACUSANI"],"210308":["CARABAYA","OLLACHEA"],"210309":["CARABAYA","SAN GABAN"],"210310":["CARABAYA","USICAYOS"],"210402":["CHUCUITO","DESAGUADERO"],"210403":["CHUCUITO","HUACULLANI"],"210401":["CHUCUITO","JULI"],"210404":["CHUCUITO","KELLUYO"],"210405":["CHUCUITO","PISACOMA"],"210406":["CHUCUITO","POMATA"],"210407":["CHUCUITO","ZEPITA"],"210502":["EL COLLAO","CAPAZO"],"210505":["EL COLLAO","CONDURIRI"],"210501":["EL COLLAO","ILAVE"],"210503":["EL COLLAO","PILCUYO"],"210504":["EL COLLAO","SANTA ROSA"],"210602":["HUANCANE","COJATA"],"210601":["HUANCANE","HUANCANE"],"210603":["HUANCANE","HUATASANI"],"210604":["HUANCANE","INCHUPALLA"],"210605":["HUANCANE","PUSI"],"210606":["HUANCANE","ROSASPATA"],"210607":["HUANCANE","TARACO"],"210608":["HUANCANE","VILQUE CHICO"],"210702":["LAMPA","CABANILLA"],"210703":["LAMPA","CALAPUJA"],"210701":["LAMPA","LAMPA"],"210704":["LAMPA","NICASIO"],"210705":["LAMPA","OCUVIRI"],"210706":["LAMPA","PALCA"],"210707":["LAMPA","PARATIA"],"210708":["LAMPA","PUCARA"],"210709":["LAMPA","SANTA LUCIA"],"210710":["LAMPA","VILAVILA"],"210802":["MELGAR","ANTAUTA"],"210801":["MELGAR","AYAVIRI"],"210803":["MELGAR","CUPI"],"210804":["MELGAR","LLALLI"],"210805":["MELGAR","MACARI"],"210806":["MELGAR","NUÑOA"],"210807":["MELGAR","ORURILLO"],"210808":["MELGAR","SANTA ROSA"],"210809":["MELGAR","UMACHIRI"],"210902":["MOHO","CONIMA"],"210903":["MOHO","HUAYRAPATA"],"210901":["MOHO","MOHO"],"210904":["MOHO","TILALI"],"210102":["PUNO","ACORA"],"210103":["PUNO","AMANTANI"],"210104":["PUNO","ATUNCOLLA"],"210105":["PUNO","CAPACHICA"],"210106":["PUNO","CHUCUITO"],"210107":["PUNO","COATA"],"210108":["PUNO","HUATA"],"210109":["PUNO","MAÑAZO"],"210110":["PUNO","PAUCARCOLLA"],"210111":["PUNO","PICHACANI"],"210112":["PUNO","PLATERIA"],"210101":["PUNO","PUNO"],"210113":["PUNO","SAN ANTONIO"],"210114":["PUNO","TIQUILLACA"],"210115":["PUNO","VILQUE"],"211002":["SAN ANTONIO DE PUTINA","ANANEA"],"211003":["SAN ANTONIO DE PUTINA","PEDRO VILCA APAZA"],"211001":["SAN ANTONIO DE PUTINA","PUTINA"],"211004":["SAN ANTONIO DE PUTINA","QUILCAPUNCU"],"211005":["SAN ANTONIO DE PUTINA","SINA"],"211102":["SAN ROMAN","CABANA"],"211103":["SAN ROMAN","CABANILLAS"],"211104":["SAN ROMAN","CARACOTO"],"211101":["SAN ROMAN","JULIACA"],"211105":["SAN ROMAN","SAN MIGUEL"],"211209":["SANDIA","ALTO INAMBARI"],"211202":["SANDIA","CUYOCUYO"],"211203":["SANDIA","LIMBANI"],"211204":["SANDIA","PATAMBUCO"],"211205":["SANDIA","PHARA"],"211206":["SANDIA","QUIACA"],"211207":["SANDIA","SAN JUAN DEL ORO"],"211210":["SANDIA","SAN PEDRO DE PUTINA PUNCO"],"211201":["SANDIA","SANDIA"],"211208":["SANDIA","YANAHUAYA"],"211302":["YUNGUYO","ANAPIA"],"211303":["YUNGUYO","COPANI"],"211304":["YUNGUYO","CUTURAPI"],"211305":["YUNGUYO","OLLARAYA"],"211306":["YUNGUYO","TINICACHI"],"211307":["YUNGUYO","UNICACHI"],"211301":["YUNGUYO","YUNGUYO"],"090201":["ACOBAMBA","ACOBAMBA"],"090202":["ACOBAMBA","ANDABAMBA"],"090203":["ACOBAMBA","ANTA"],"090204":["ACOBAMBA","CAJA"],"090205":["ACOBAMBA","MARCAS"],"090206":["ACOBAMBA","PAUCARA"],"090207":["ACOBAMBA","POMACOCHA"],"090208":["ACOBAMBA","ROSARIO"],"090302":["ANGARAES","ANCHONGA"],"090303":["ANGARAES","CALLANMARCA"],"090304":["ANGARAES","CCOCHACCASA"],"090305":["ANGARAES","CHINCHO"],"090306":["ANGARAES","CONGALLA"],"090307":["ANGARAES","HUANCA-HUANCA"],"090308":["ANGARAES","HUAYLLAY GRANDE"],"090309":["ANGARAES","JULCAMARCA"],"090301":["ANGARAES","LIRCAY"],"090310":["ANGARAES","SAN ANTONIO DE ANTAPARCO"],"090311":["ANGARAES","SANTO TOMAS DE PATA"],"090312":["ANGARAES","SECCLLA"],"090402":["CASTROVIRREYNA","ARMA"],"090403":["CASTROVIRREYNA","AURAHUA"],"090404":["CASTROVIRREYNA","CAPILLAS"],"090401":["CASTROVIRREYNA","CASTROVIRREYNA"],"090405":["CASTROVIRREYNA","CHUPAMARCA"],"090406":["CASTROVIRREYNA","COCAS"],"090407":["CASTROVIRREYNA","HUACHOS"],"090408":["CASTROVIRREYNA","HUAMATAMBO"],"090409":["CASTROVIRREYNA","MOLLEPAMPA"],"090410":["CASTROVIRREYNA","SAN JUAN"],"090411":["CASTROVIRREYNA","SANTA ANA"],"090412":["CASTROVIRREYNA","TANTARA"],"090413":["CASTROVIRREYNA","TICRAPO"],"090502":["CHURCAMPA","ANCO"],"090503":["CHURCAMPA","CHINCHIHUASI"],"090501":["CHURCAMPA","CHURCAMPA"],"090511":["CHURCAMPA","COSME"],"090504":["CHURCAMPA","EL CARMEN"],"090505":["CHURCAMPA","LA MERCED"],"090506":["CHURCAMPA","LOCROJA"],"090510":["CHURCAMPA","PACHAMARCA"],"090507":["CHURCAMPA","PAUCARBAMBA"],"090508":["CHURCAMPA","SAN MIGUEL DE MAYOCC"],"090509":["CHURCAMPA","SAN PEDRO DE CORIS"],"090102":["HUANCAVELICA","ACOBAMBILLA"],"090103":["HUANCAVELICA","ACORIA"],"090118":["HUANCAVELICA","ASCENSION"],"090104":["HUANCAVELICA","CONAYCA"],"090105":["HUANCAVELICA","CUENCA"],"090106":["HUANCAVELICA","HUACHOCOLPA"],"090101":["HUANCAVELICA","HUANCAVELICA"],"090119":["HUANCAVELICA","HUANDO"],"090107":["HUANCAVELICA","HUAYLLAHUARA"],"090108":["HUANCAVELICA","IZCUCHACA"],"090109":["HUANCAVELICA","LARIA"],"090110":["HUANCAVELICA","MANTA"],"090111":["HUANCAVELICA","MARISCAL CACERES"],"090112":["HUANCAVELICA","MOYA"],"090113":["HUANCAVELICA","NUEVO OCCORO"],"090114":["HUANCAVELICA","PALCA"],"090115":["HUANCAVELICA","PILCHACA"],"090116":["HUANCAVELICA","VILCA"],"090117":["HUANCAVELICA","YAULI"],"090702":["TAYACAJA","ACOSTAMBO"],"090703":["TAYACAJA","ACRAQUIA"],"090704":["TAYACAJA","AHUAYCHA"],"090720":["TAYACAJA","ANDAYMARCA"],"090725":["TAYACAJA","COCHABAMBA"],"090705":["TAYACAJA","COLCABAMBA"],"090706":["TAYACAJA","DANIEL HERNANDEZ"],"090707":["TAYACAJA","HUACHOCOLPA"],"090709":["TAYACAJA","HUARIBAMBA"],"090724":["TAYACAJA","LAMBRAS"],"090710":["TAYACAJA","ÑAHUIMPUQUIO"],"090701":["TAYACAJA","PAMPAS"],"090711":["TAYACAJA","PAZOS"],"090722":["TAYACAJA","PICHOS"],"090719":["TAYACAJA","QUICHUAS"],"090713":["TAYACAJA","QUISHUAR"],"090721":["TAYACAJA","ROBLE"],"090714":["TAYACAJA","SALCABAMBA"],"090715":["TAYACAJA","SALCAHUASI"],"090716":["TAYACAJA","SAN MARCOS DE ROCCHAC"],"090723":["TAYACAJA","SANTIAGO DE TUCUMA"],"090717":["TAYACAJA","SURCUBAMBA"],"090718":["TAYACAJA","TINTAY PUNCU"],"120301":["CHANCHAMAYO","CHANCHAMAYO"],"120302":["CHANCHAMAYO","PERENE"],"120303":["CHANCHAMAYO","PICHANAQUI"],"120304":["CHANCHAMAYO","SAN LUIS DE SHUARO"],"120305":["CHANCHAMAYO","SAN RAMON"],"120306":["CHANCHAMAYO","VITOC"],"120902":["CHUPACA","AHUAC"],"120903":["CHUPACA","CHONGOS BAJO"],"120901":["CHUPACA","CHUPACA"],"120904":["CHUPACA","HUACHAC"],"120905":["CHUPACA","HUAMANCACA CHICO"],"120906":["CHUPACA","SAN JUAN DE ISCOS"],"120907":["CHUPACA","SAN JUAN DE JARPA"],"120908":["CHUPACA","TRES DE DICIEMBRE"],"120909":["CHUPACA","YANACANCHA"],"120202":["CONCEPCION","ACO"],"120203":["CONCEPCION","ANDAMARCA"],"120204":["CONCEPCION","CHAMBARA"],"120205":["CONCEPCION","COCHAS"],"120206":["CONCEPCION","COMAS"],"120201":["CONCEPCION","CONCEPCION"],"120207":["CONCEPCION","HEROINAS TOLEDO"],"120208":["CONCEPCION","MANZANARES"],"120209":["CONCEPCION","MARISCAL CASTILLA"],"120210":["CONCEPCION","MATAHUASI"],"120211":["CONCEPCION","MITO"],"120212":["CONCEPCION","NUEVE DE JULIO"],"120213":["CONCEPCION","ORCOTUNA"],"120214":["CONCEPCION","SAN JOSE DE QUERO"],"120215":["CONCEPCION","SANTA ROSA DE OCOPA"],"120104":["HUANCAYO","CARHUACALLANGA"],"120105":["HUANCAYO","CHACAPAMPA"],"120106":["HUANCAYO","CHICCHE"],"120107":["HUANCAYO","CHILCA"],"120108":["HUANCAYO","CHONGOS ALTO"],"120111":["HUANCAYO","CHUPURO"],"120112":["HUANCAYO","COLCA"],"120113":["HUANCAYO","CULLHUAS"],"120114":["HUANCAYO","EL TAMBO"],"120116":["HUANCAYO","HUACRAPUQUIO"],"120117":["HUANCAYO","HUALHUAS"],"120119":["HUANCAYO","HUANCAN"],"120101":["HUANCAYO","HUANCAYO"],"120120":["HUANCAYO","HUASICANCHA"],"120121":["HUANCAYO","HUAYUCACHI"],"120122":["HUANCAYO","INGENIO"],"120124":["HUANCAYO","PARIAHUANCA"],"120125":["HUANCAYO","PILCOMAYO"],"120126":["HUANCAYO","PUCARA"],"120127":["HUANCAYO","QUICHUAY"],"120128":["HUANCAYO","QUILCAS"],"120129":["HUANCAYO","SAN AGUSTIN"],"120130":["HUANCAYO","SAN JERONIMO DE TUNAN"],"120135":["HUANCAYO","SANTO DOMINGO DE ACOBAMBA"],"120132":["HUANCAYO","SAÑO"],"120133":["HUANCAYO","SAPALLANGA"],"120134":["HUANCAYO","SICAYA"],"120136":["HUANCAYO","VIQUES"],"120402":["JAUJA","ACOLLA"],"120403":["JAUJA","APATA"],"120404":["JAUJA","ATAURA"],"120405":["JAUJA","CANCHAYLLO"],"120406":["JAUJA","CURICACA"],"120407":["JAUJA","EL MANTARO"],"120408":["JAUJA","HUAMALI"],"120409":["JAUJA","HUARIPAMPA"],"120410":["JAUJA","HUERTAS"],"120411":["JAUJA","JANJAILLO"],"120401":["JAUJA","JAUJA"],"120412":["JAUJA","JULCAN"],"120413":["JAUJA","LEONOR ORDOÑEZ"],"120414":["JAUJA","LLOCLLAPAMPA"],"120415":["JAUJA","MARCO"],"120416":["JAUJA","MASMA"],"120417":["JAUJA","MASMA CHICCHE"],"120418":["JAUJA","MOLINOS"],"120419":["JAUJA","MONOBAMBA"],"120420":["JAUJA","MUQUI"],"120421":["JAUJA","MUQUIYAUYO"],"120422":["JAUJA","PACA"],"120423":["JAUJA","PACCHA"],"120424":["JAUJA","PANCAN"],"120425":["JAUJA","PARCO"],"120426":["JAUJA","POMACANCHA"],"120427":["JAUJA","RICRAN"],"120428":["JAUJA","SAN LORENZO"],"120429":["JAUJA","SAN PEDRO DE CHUNAN"],"120430":["JAUJA","SAUSA"],"120431":["JAUJA","SINCOS"],"120432":["JAUJA","TUNAN MARCA"],"120433":["JAUJA","YAULI"],"120434":["JAUJA","YAUYOS"],"120502":["JUNIN","CARHUAMAYO"],"120501":["JUNIN","JUNIN"],"120503":["JUNIN","ONDORES"],"120504":["JUNIN","ULCUMAYO"],"120602":["SATIPO","COVIRIALI"],"120603":["SATIPO","LLAYLLA"],"120604":["SATIPO","MAZAMARI"],"120605":["SATIPO","PAMPA HERMOSA"],"120606":["SATIPO","PANGOA"],"120607":["SATIPO","RIO NEGRO"],"120608":["SATIPO","RIO TAMBO"],"120601":["SATIPO","SATIPO"],"120609":["SATIPO","VIZCATÁN DEL ENE"],"120702":["TARMA","ACOBAMBA"],"120703":["TARMA","HUARICOLCA"],"120704":["TARMA","HUASAHUASI"],"120705":["TARMA","LA UNION"],"120706":["TARMA","PALCA"],"120707":["TARMA","PALCAMAYO"],"120708":["TARMA","SAN PEDRO DE CAJAS"],"120709":["TARMA","TAPO"],"120701":["TARMA","TARMA"],"120802":["YAULI","CHACAPALPA"],"120803":["YAULI","HUAY-HUAY"],"120801":["YAULI","LA OROYA"],"120804":["YAULI","MARCAPOMACOCHA"],"120805":["YAULI","MOROCOCHA"],"120806":["YAULI","PACCHA"],"120807":["YAULI","SANTA BARBARA DE CARHUACAYAN"],"120808":["YAULI","SANTA ROSA DE SACCO"],"120809":["YAULI","SUITUCANCHA"],"120810":["YAULI","YAULI"],"190302":["OXAPAMPA","CHONTABAMBA"],"190308":["OXAPAMPA","CONSTITUCION"],"190303":["OXAPAMPA","HUANCABAMBA"],"190301":["OXAPAMPA","OXAPAMPA"],"190304":["OXAPAMPA","PALCAZU"],"190305":["OXAPAMPA","POZUZO"],"190306":["OXAPAMPA","PUERTO BERMUDEZ"],"190307":["OXAPAMPA","VILLA RICA"],"010202":["BAGUA","ARAMANGO"],"010201":["BAGUA","BAGUA"],"010203":["BAGUA","COPALLIN"],"010204":["BAGUA","EL PARCO"],"010205":["BAGUA","IMAZA"],"010206":["BAGUA","LA PECA"],"010302":["BONGARA","CHISQUILLA"],"010303":["BONGARA","CHURUJA"],"010304":["BONGARA","COROSHA"],"010305":["BONGARA","CUISPES"],"010306":["BONGARA","FLORIDA"],"010307":["BONGARA","JAZAN"],"010301":["BONGARA","JUMBILLA"],"010308":["BONGARA","RECTA"],"010309":["BONGARA","SAN CARLOS"],"010310":["BONGARA","SHIPASBAMBA"],"010311":["BONGARA","VALERA"],"010312":["BONGARA","YAMBRASBAMBA"],"010102":["CHACHAPOYAS","ASUNCION"],"010103":["CHACHAPOYAS","BALSAS"],"010101":["CHACHAPOYAS","CHACHAPOYAS"],"010104":["CHACHAPOYAS","CHETO"],"010105":["CHACHAPOYAS","CHILIQUIN"],"010106":["CHACHAPOYAS","CHUQUIBAMBA"],"010107":["CHACHAPOYAS","GRANADA"],"010108":["CHACHAPOYAS","HUANCAS"],"010109":["CHACHAPOYAS","LA JALCA"],"010110":["CHACHAPOYAS","LEIMEBAMBA"],"010111":["CHACHAPOYAS","LEVANTO"],"010112":["CHACHAPOYAS","MAGDALENA"],"010113":["CHACHAPOYAS","MARISCAL CASTILLA"],"010114":["CHACHAPOYAS","MOLINOPAMPA"],"010115":["CHACHAPOYAS","MONTEVIDEO"],"010116":["CHACHAPOYAS","OLLEROS"],"010117":["CHACHAPOYAS","QUINJALCA"],"010118":["CHACHAPOYAS","SAN FRANCISCO DE DAGUAS"],"010119":["CHACHAPOYAS","SAN ISIDRO DE MAINO"],"010120":["CHACHAPOYAS","SOLOCO"],"010121":["CHACHAPOYAS","SONCHE"],"010402":["CONDORCANQUI","EL CENEPA"],"010401":["CONDORCANQUI","NIEVA"],"010403":["CONDORCANQUI","RIO SANTIAGO"],"010502":["LUYA","CAMPORREDONDO"],"010503":["LUYA","COCABAMBA"],"010504":["LUYA","COLCAMAR"],"010505":["LUYA","CONILA"],"010506":["LUYA","INGUILPATA"],"010501":["LUYA","LAMUD"],"010507":["LUYA","LONGUITA"],"010508":["LUYA","LONYA CHICO"],"010509":["LUYA","LUYA"],"010510":["LUYA","LUYA VIEJO"],"010511":["LUYA","MARIA"],"010512":["LUYA","OCALLI"],"010513":["LUYA","OCUMAL"],"010514":["LUYA","PISUQUIA"],"010515":["LUYA","PROVIDENCIA"],"010516":["LUYA","SAN CRISTOBAL"],"010517":["LUYA","SAN FRANCISCO DEL YESO"],"010518":["LUYA","SAN JERONIMO"],"010519":["LUYA","SAN JUAN DE LOPECANCHA"],"010520":["LUYA","SANTA CATALINA"],"010521":["LUYA","SANTO TOMAS"],"010522":["LUYA","TINGO"],"010523":["LUYA","TRITA"],"010602":["RODRIGUEZ DE MENDOZA","CHIRIMOTO"],"010603":["RODRIGUEZ DE MENDOZA","COCHAMAL"],"010604":["RODRIGUEZ DE MENDOZA","HUAMBO"],"010605":["RODRIGUEZ DE MENDOZA","LIMABAMBA"],"010606":["RODRIGUEZ DE MENDOZA","LONGAR"],"010607":["RODRIGUEZ DE MENDOZA","MARISCAL BENAVIDES"],"010608":["RODRIGUEZ DE MENDOZA","MILPUC"],"010609":["RODRIGUEZ DE MENDOZA","OMIA"],"010601":["RODRIGUEZ DE MENDOZA","SAN NICOLAS"],"010610":["RODRIGUEZ DE MENDOZA","SANTA ROSA"],"010611":["RODRIGUEZ DE MENDOZA","TOTORA"],"010612":["RODRIGUEZ DE MENDOZA","VISTA ALEGRE"],"010701":["UTCUBAMBA","BAGUA GRANDE"],"010702":["UTCUBAMBA","CAJARURO"],"010703":["UTCUBAMBA","CUMBA"],"010704":["UTCUBAMBA","EL MILAGRO"],"010705":["UTCUBAMBA","JAMALCA"],"010706":["UTCUBAMBA","LONYA GRANDE"],"010707":["UTCUBAMBA","YAMON"],"140116":["CHICLAYO","CAYALTI"],"140101":["CHICLAYO","CHICLAYO"],"140102":["CHICLAYO","CHONGOYAPE"],"140103":["CHICLAYO","ETEN"],"140104":["CHICLAYO","ETEN PUERTO"],"140105":["CHICLAYO","JOSE LEONARDO ORTIZ"],"140106":["CHICLAYO","LA VICTORIA"],"140107":["CHICLAYO","LAGUNAS"],"140108":["CHICLAYO","MONSEFU"],"140109":["CHICLAYO","NUEVA ARICA"],"140110":["CHICLAYO","OYOTUN"],"140117":["CHICLAYO","PATAPO"],"140111":["CHICLAYO","PICSI"],"140112":["CHICLAYO","PIMENTEL"],"140118":["CHICLAYO","POMALCA"],"140119":["CHICLAYO","PUCALA"],"140113":["CHICLAYO","REQUE"],"140114":["CHICLAYO","SANTA ROSA"],"140115":["CHICLAYO","SAÑA"],"140120":["CHICLAYO","TUMAN"],"140202":["FERREÑAFE","CAÑARIS"],"140201":["FERREÑAFE","FERREÑAFE"],"140203":["FERREÑAFE","INCAHUASI"],"140204":["FERREÑAFE","MANUEL ANTONIO MESONES MURO"],"140205":["FERREÑAFE","PITIPO"],"140206":["FERREÑAFE","PUEBLO NUEVO"],"140302":["LAMBAYEQUE","CHOCHOPE"],"140303":["LAMBAYEQUE","ILLIMO"],"140304":["LAMBAYEQUE","JAYANCA"],"140301":["LAMBAYEQUE","LAMBAYEQUE"],"140305":["LAMBAYEQUE","MOCHUMI"],"140306":["LAMBAYEQUE","MORROPE"],"140307":["LAMBAYEQUE","MOTUPE"],"140308":["LAMBAYEQUE","OLMOS"],"140309":["LAMBAYEQUE","PACORA"],"140310":["LAMBAYEQUE","SALAS"],"140311":["LAMBAYEQUE","SAN JOSE"],"140312":["LAMBAYEQUE","TUCUME"],"160205":["ALTO AMAZONAS","JEBEROS"],"160206":["ALTO AMAZONAS","LAGUNAS"],"160210":["ALTO AMAZONAS","SANTA CRUZ"],"160211":["ALTO AMAZONAS","TENIENTE CESAR LOPEZ ROJAS"],"160706":["DATEM DEL MARAÑON","ANDOAS"],"160701":["DATEM DEL MARAÑON","BARRANCA"],"160702":["DATEM DEL MARAÑON","CAHUAPANAS"],"160703":["DATEM DEL MARAÑON","MANSERICHE"],"160704":["DATEM DEL MARAÑON","MORONA"],"160705":["DATEM DEL MARAÑON","PASTAZA"],"160301":["LORETO","NAUTA"],"160302":["LORETO","PARINARI"],"160303":["LORETO","TIGRE"],"160304":["LORETO","TROMPETEROS"],"160305":["LORETO","URARINAS"],"160402":["MARISCAL RAMON CASTILLA","PEBAS"],"160401":["MARISCAL RAMON CASTILLA","RAMON CASTILLA"],"160404":["MARISCAL RAMON CASTILLA","SAN PABLO"],"160403":["MARISCAL RAMON CASTILLA","YAVARI"],"160102":["MAYNAS","ALTO NANAY"],"160112":["MAYNAS","BELEN"],"160103":["MAYNAS","FERNANDO LORES"],"160104":["MAYNAS","INDIANA"],"160101":["MAYNAS","IQUITOS"],"160105":["MAYNAS","LAS AMAZONAS"],"160106":["MAYNAS","MAZAN"],"160107":["MAYNAS","NAPO"],"160108":["MAYNAS","PUNCHANA"],"160801":["PUTUMAYO","PUTUMAYO"],"160113":["MAYNAS","SAN JUAN BAUTISTA"],"160110":["MAYNAS","TORRES CAUSANA"],"160802":["PUTUMAYO","ROSA PANDURO"],"160803":["PUTUMAYO","TENIENTE MANUEL CLAVERO"],"160804":["PUTUMAYO","YAGUAS"],"160502":["REQUENA","ALTO TAPICHE"],"160503":["REQUENA","CAPELO"],"160504":["REQUENA","EMILIO SAN MARTIN"],"160510":["REQUENA","JENARO HERRERA"],"160505":["REQUENA","MAQUIA"],"160506":["REQUENA","PUINAHUA"],"160501":["REQUENA","REQUENA"],"160507":["REQUENA","SAQUENA"],"160508":["REQUENA","SOPLIN"],"160509":["REQUENA","TAPICHE"],"160511":["REQUENA","YAQUERANA"],"170202":["MANU","FITZCARRALD"],"170204":["MANU","HUEPETUHE"],"170203":["MANU","MADRE DE DIOS"],"170201":["MANU","MANU"],"170302":["TAHUAMANU","IBERIA"],"170301":["TAHUAMANU","IÑAPARI"],"170303":["TAHUAMANU","TAHUAMANU"],"170102":["TAMBOPATA","INAMBARI"],"170104":["TAMBOPATA","LABERINTO"],"170103":["TAMBOPATA","LAS PIEDRAS"],"170101":["TAMBOPATA","TAMBOPATA"],"200201":["AYABACA","AYABACA"],"200202":["AYABACA","FRIAS"],"200203":["AYABACA","JILILI"],"200204":["AYABACA","LAGUNAS"],"200205":["AYABACA","MONTERO"],"200206":["AYABACA","PACAIPAMPA"],"200207":["AYABACA","PAIMAS"],"200208":["AYABACA","SAPILLICA"],"200209":["AYABACA","SICCHEZ"],"200210":["AYABACA","SUYO"],"200302":["HUANCABAMBA","CANCHAQUE"],"200303":["HUANCABAMBA","EL CARMEN DE LA FRONTERA"],"200301":["HUANCABAMBA","HUANCABAMBA"],"200304":["HUANCABAMBA","HUARMACA"],"200305":["HUANCABAMBA","LALAQUIZ"],"200306":["HUANCABAMBA","SAN MIGUEL DE EL FAIQUE"],"200307":["HUANCABAMBA","SONDOR"],"200308":["HUANCABAMBA","SONDORILLO"],"200402":["MORROPON","BUENOS AIRES"],"200403":["MORROPON","CHALACO"],"200401":["MORROPON","CHULUCANAS"],"200404":["MORROPON","LA MATANZA"],"200405":["MORROPON","MORROPON"],"200406":["MORROPON","SALITRAL"],"200407":["MORROPON","SAN JUAN DE BIGOTE"],"200408":["MORROPON","SANTA CATALINA DE MOSSA"],"200409":["MORROPON","SANTO DOMINGO"],"200410":["MORROPON","YAMANGO"],"200502":["PAITA","AMOTAPE"],"200503":["PAITA","ARENAL"],"200504":["PAITA","COLAN"],"200505":["PAITA","LA HUACA"],"200501":["PAITA","PAITA"],"200506":["PAITA","TAMARINDO"],"200507":["PAITA","VICHAYAL"],"200104":["PIURA","CASTILLA"],"200105":["PIURA","CATACAOS"],"200107":["PIURA","CURA MORI"],"200108":["PIURA","EL TALLAN"],"200109":["PIURA","LA ARENA"],"200110":["PIURA","LA UNION"],"200111":["PIURA","LAS LOMAS"],"200101":["PIURA","PIURA"],"200114":["PIURA","TAMBO GRANDE"],"200115":["PIURA","VEINTISEIS DE OCTUBRE"],"200802":["SECHURA","BELLAVISTA DE LA UNION"],"200803":["SECHURA","BERNAL"],"200804":["SECHURA","CRISTO NOS VALGA"],"200806":["SECHURA","RINCONADA LLICUAR"],"200801":["SECHURA","SECHURA"],"200805":["SECHURA","VICE"],"200602":["SULLANA","BELLAVISTA"],"200603":["SULLANA","IGNACIO ESCUDERO"],"200604":["SULLANA","LANCONES"],"200605":["SULLANA","MARCAVELICA"],"200606":["SULLANA","MIGUEL CHECA"],"200607":["SULLANA","QUERECOTILLO"],"200608":["SULLANA","SALITRAL"],"200601":["SULLANA","SULLANA"],"200702":["TALARA","EL ALTO"],"200703":["TALARA","LA BREA"],"200704":["TALARA","LOBITOS"],"200705":["TALARA","LOS ORGANOS"],"200706":["TALARA","MANCORA"],"200701":["TALARA","PARIÑAS"],"160202":["ALTO AMAZONAS","BALSAPUERTO"],"160201":["ALTO AMAZONAS","YURIMAGUAS"],"220202":["BELLAVISTA","ALTO BIAVO"],"220203":["BELLAVISTA","BAJO BIAVO"],"220201":["BELLAVISTA","BELLAVISTA"],"220204":["BELLAVISTA","HUALLAGA"],"220205":["BELLAVISTA","SAN PABLO"],"220206":["BELLAVISTA","SAN RAFAEL"],"220302":["EL DORADO","AGUA BLANCA"],"220301":["EL DORADO","SAN JOSE DE SISA"],"220303":["EL DORADO","SAN MARTIN"],"220304":["EL DORADO","SANTA ROSA"],"220305":["EL DORADO","SHATOJA"],"220402":["HUALLAGA","ALTO SAPOSOA"],"220403":["HUALLAGA","EL ESLABON"],"220404":["HUALLAGA","PISCOYACU"],"220405":["HUALLAGA","SACANCHE"],"220401":["HUALLAGA","SAPOSOA"],"220406":["HUALLAGA","TINGO DE SAPOSOA"],"220502":["LAMAS","ALONSO DE ALVARADO"],"220503":["LAMAS","BARRANQUITA"],"220504":["LAMAS","CAYNARACHI"],"220505":["LAMAS","CUÑUMBUQUI"],"220501":["LAMAS","LAMAS"],"220506":["LAMAS","PINTO RECODO"],"220507":["LAMAS","RUMISAPA"],"220508":["LAMAS","SAN ROQUE DE CUMBAZA"],"220509":["LAMAS","SHANAO"],"220510":["LAMAS","TABALOSOS"],"220511":["LAMAS","ZAPATERO"],"220602":["MARISCAL CACERES","CAMPANILLA"],"220603":["MARISCAL CACERES","HUICUNGO"],"220601":["MARISCAL CACERES","JUANJUI"],"220604":["MARISCAL CACERES","PACHIZA"],"220605":["MARISCAL CACERES","PAJARILLO"],"220102":["MOYOBAMBA","CALZADA"],"220103":["MOYOBAMBA","HABANA"],"220104":["MOYOBAMBA","JEPELACIO"],"220101":["MOYOBAMBA","MOYOBAMBA"],"220105":["MOYOBAMBA","SORITOR"],"220106":["MOYOBAMBA","YANTALO"],"220702":["PICOTA","BUENOS AIRES"],"220703":["PICOTA","CASPISAPA"],"220701":["PICOTA","PICOTA"],"220704":["PICOTA","PILLUANA"],"220705":["PICOTA","PUCACACA"],"220706":["PICOTA","SAN CRISTOBAL"],"220707":["PICOTA","SAN HILARION"],"220708":["PICOTA","SHAMBOYACU"],"220709":["PICOTA","TINGO DE PONASA"],"220710":["PICOTA","TRES UNIDOS"],"220802":["RIOJA","AWAJUN"],"220803":["RIOJA","ELIAS SOPLIN VARGAS"],"220804":["RIOJA","NUEVA CAJAMARCA"],"220805":["RIOJA","PARDO MIGUEL"],"220806":["RIOJA","POSIC"],"220801":["RIOJA","RIOJA"],"220807":["RIOJA","SAN FERNANDO"],"220808":["RIOJA","YORONGOS"],"220809":["RIOJA","YURACYACU"],"220902":["SAN MARTIN","ALBERTO LEVEAU"],"220903":["SAN MARTIN","CACATACHI"],"220904":["SAN MARTIN","CHAZUTA"],"220905":["SAN MARTIN","CHIPURANA"],"220906":["SAN MARTIN","EL PORVENIR"],"220907":["SAN MARTIN","HUIMBAYOC"],"220908":["SAN MARTIN","JUAN GUERRA"],"220909":["SAN MARTIN","LA BANDA DE SHILCAYO"],"220910":["SAN MARTIN","MORALES"],"220911":["SAN MARTIN","PAPAPLAYA"],"220912":["SAN MARTIN","SAN ANTONIO"],"220913":["SAN MARTIN","SAUCE"],"220914":["SAN MARTIN","SHAPAJA"],"220901":["SAN MARTIN","TARAPOTO"],"221002":["TOCACHE","NUEVO PROGRESO"],"221003":["TOCACHE","POLVORA"],"221006":["TOCACHE","SANTA LUCIA"],"221004":["TOCACHE","SHUNTE"],"221001":["TOCACHE","TOCACHE"],"221005":["TOCACHE","UCHIZA"],"180202":["GENERAL SANCHEZ CERRO","CHOJATA"],"180204":["GENERAL SANCHEZ CERRO","ICHUÑA"],"180206":["GENERAL SANCHEZ CERRO","LLOQUE"],"180209":["GENERAL SANCHEZ CERRO","QUINISTAQUILLAS"],"180211":["GENERAL SANCHEZ CERRO","YUNGA"],"180302":["ILO","EL ALGARROBAL"],"180301":["ILO","ILO"],"180303":["ILO","PACOCHA"],"180102":["MARISCAL NIETO","CARUMAS"],"180103":["MARISCAL NIETO","CUCHUMBAYA"],"180101":["MARISCAL NIETO","MOQUEGUA"],"180104":["MARISCAL NIETO","SAMEGUA"],"180107":["MARISCAL NIETO","SAN ANTONIO"],"180105":["MARISCAL NIETO","SAN CRISTOBAL"],"180106":["MARISCAL NIETO","TORATA"],"230202":["CANDARAVE","CAIRANI"],"230203":["CANDARAVE","CAMILACA"],"230201":["CANDARAVE","CANDARAVE"],"230204":["CANDARAVE","CURIBAYA"],"230205":["CANDARAVE","HUANUARA"],"230206":["CANDARAVE","QUILAHUANI"],"230302":["JORGE BASADRE","ILABAYA"],"230303":["JORGE BASADRE","ITE"],"230301":["JORGE BASADRE","LOCUMBA"],"230102":["TACNA","ALTO DE LA ALIANZA"],"230103":["TACNA","CALANA"],"230104":["TACNA","CIUDAD NUEVA"],"230110":["TACNA","CORONEL GREGORIO ALBARRACIN LANCHIPA"],"230105":["TACNA","INCLAN"],"230111":["TACNA","LA YARADA LOS PALOS"],"230106":["TACNA","PACHIA"],"230107":["TACNA","PALCA"],"230108":["TACNA","POCOLLAY"],"230109":["TACNA","SAMA"],"230101":["TACNA","TACNA"],"230403":["TARATA","ESTIQUE"],"230404":["TARATA","ESTIQUE-PAMPA"],"230402":["TARATA","HEROES ALBARRACIN"],"230405":["TARATA","SITAJARA"],"230406":["TARATA","SUSAPAYA"],"230401":["TARATA","TARATA"],"230407":["TARATA","TARUCACHI"],"230408":["TARATA","TICACO"],"240203":["CONTRALMIRANTE VILLAR","CANOAS DE PUNTA SAL"],"240202":["CONTRALMIRANTE VILLAR","CASITAS"],"240201":["CONTRALMIRANTE VILLAR","ZORRITOS"],"240102":["TUMBES","CORRALES"],"240103":["TUMBES","LA CRUZ"],"240104":["TUMBES","PAMPAS DE HOSPITAL"],"240105":["TUMBES","SAN JACINTO"],"240106":["TUMBES","SAN JUAN DE LA VIRGEN"],"240101":["TUMBES","TUMBES"],"240302":["ZARUMILLA","AGUAS VERDES"],"240303":["ZARUMILLA","MATAPALO"],"240304":["ZARUMILLA","PAPAYAL"],"240301":["ZARUMILLA","ZARUMILLA"],"160601":["UCAYALI","CONTAMANA"],"160602":["UCAYALI","INAHUAYA"],"160603":["UCAYALI","PADRE MARQUEZ"],"160604":["UCAYALI","PAMPA HERMOSA"],"160605":["UCAYALI","SARAYACU"],"160606":["UCAYALI","VARGAS GUERRA"],"250201":["ATALAYA","RAIMONDI"],"250202":["ATALAYA","SEPAHUA"],"250203":["ATALAYA","TAHUANIA"],"250204":["ATALAYA","YURUA"],"250101":["CORONEL PORTILLO","CALLERIA"],"250102":["CORONEL PORTILLO","CAMPOVERDE"],"250103":["CORONEL PORTILLO","IPARIA"],"250107":["CORONEL PORTILLO","MANANTAY"],"250104":["CORONEL PORTILLO","MASISEA"],"250106":["CORONEL PORTILLO","NUEVA REQUENA"],"250105":["CORONEL PORTILLO","YARINACOCHA"],"250305":["PADRE ABAD","ALEXANDER VON HUMBOLDT"],"250307":["PADRE ABAD","BOQUERON"],"250303":["PADRE ABAD","CURIMANA"],"250306":["PADRE ABAD","HUIPOCA"],"250302":["PADRE ABAD","IRAZOLA"],"250304":["PADRE ABAD","NESHUYA"],"250301":["PADRE ABAD","PADRE ABAD"],"250401":["PURUS","PURUS"]}};
-
+// ── Utilidades ──
 const $ = id => document.getElementById(id);
 const norm = s => (s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase();
-const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
+const slug = s => norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const esc = s => (s??'').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const title = s => (s||'').toLowerCase().replace(/(^|[\s(-])([a-záéíóúñ])/g, (m,a,b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
+const has = v => v !== undefined && v !== null && String(v).trim() !== '';
 
-// Similitud entre nombres (0 a 1)
-function lev(a, b){
-  const m = a.length, n = b.length; if (!m || !n) return Math.max(m,n);
-  let prev = Array.from({length:n+1}, (_,j) => j);
-  for (let i = 1; i <= m; i++){ const cur = [i];
-    for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j]+1, cur[j-1]+1, prev[j-1] + (a[i-1]===b[j-1]?0:1));
-    prev = cur; }
-  return prev[n];
+function num(v){
+  if(!has(v)) return null;
+  let s = String(v).replace(/[\s\u00a0%]/g,'');
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g,'');          // 1,234,567.8
+  else if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(s)) s = s.replace(/\./g,'').replace(',','.'); // 1.234.567,8
+  else if ((s.match(/\./g)||[]).length > 1) { const i = s.lastIndexOf('.'); s = s.slice(0,i).replace(/\./g,'') + s.slice(i); } // 51.619.981
+  else s = s.replace(',', '.');
+  const n = parseFloat(s.replace(/[^\d.-]/g,''));
+  return isNaN(n) ? null : Math.round(n);
 }
-// Variantes de escritura frecuentes en topónimos: ll/y, v/b, z/s
-const fold = s => s.replace(/ll/g,'y').replace(/v/g,'b').replace(/z/g,'s').replace(/\s+/g,' ');
-function similar(a, b){
-  a = tkey(a); b = tkey(b); if (!a || !b) return 0; if (a === b) return 1;
-  if (fold(a) === fold(b)) return .95;
-  const strip = s => s.replace(/\b(de|del|la|las|los|el|y)\b/g,' ').replace(/\s+/g,' ').trim();
-  if (strip(a) === strip(b)) return .97;
-  if (a.includes(b) || b.includes(a)) return .9;
-  return 1 - lev(a, b) / Math.max(a.length, b.length);
+function fmtN(n){ return n==null ? '—' : n.toLocaleString('en-US').replace(/,/g,'\u2009'); }
+function nTxt(v){ const n = num(v); return n==null ? (has(v)? esc(v) : '—') : fmtN(n); }
+function fmtP(v){
+  if(!has(v)) return '—';
+  const s = String(v).trim().replace(',', '.');
+  if (s.includes('%')) return s.replace(/\s/g,'');
+  const n = parseFloat(s); if (isNaN(n)) return esc(v);
+  const p = Math.abs(n) <= 1 ? n*100 : n;
+  return (+p.toFixed(2)).toString() + '%';
 }
-const SIM_OK = .82;
+function pctNum(v){ const s = String(v).replace(',','.'); const n = parseFloat(s); if (isNaN(n)) return null; return s.includes('%') || Math.abs(n) > 1 ? n : n*100; }
+function share(part,total){ if(part==null||!total) return null; return part/total*100; }
+function pTxt(p){ return p==null ? '—' : (+p.toFixed(1)).toString() + '%'; }
+function imgSrc(v){ return /^https?:\/\//i.test(v) ? v : CONFIG.CARPETA_IMAGENES + encodeURIComponent(v); }
+function bg(v){ return has(v) ? `background-image:url('${imgSrc(v)}')` : ''; }
+function img(v, alt=''){ return has(v) ? `<img src="${imgSrc(v)}" alt="${esc(alt)}" crossorigin="anonymous" onerror="this.remove()">` : ''; }
 
-function depOk(sheetDep, ub){
-  const d = tkey(sheetDep), code = ub.slice(0,2), ref = tkey(ANEXO.dep[code] || '');
-  if (d === ref) return true;
-  if (code === '15') return d === 'lima' || (ub.slice(2,4) === '01' ? d === 'lima metropolitana' : d === 'lima provincias' || d === 'lima region');
-  return similar(d, ref) >= .9;
-}
-function suggest(dep, dist, prov){
-  const out = [];
-  Object.entries(ANEXO.ref).forEach(([u, [p, d]]) => {
-    const depMatch = depOk(dep, u); if (!depMatch) return;
-    // para sugerir se exige parecido real del nombre (no solo que uno contenga al otro)
-    const x = tkey(dist), y = tkey(d), strict = fold(x) === fold(y) ? 1 : 1 - lev(fold(x), fold(y)) / Math.max(x.length, y.length);
-    if (strict >= .85) out.push([strict + (prov ? similar(prov, p) * .2 : 0), u, p, d]);
+function parseTSV(raw){
+  const lines = raw.replace(/\r\n?/g,'\n').split('\n').filter(l => l.replace(/\t/g,'').trim());
+  if(!lines.length) return [];
+  const head = lines[0].split('\t').map(h => norm(h));
+  return lines.slice(1).map(l => {
+    const c = l.split('\t'); const o = {};
+    head.forEach((h,i) => { if(h) o[h] = (c[i]||'').trim().replace(/^"|"$/g,''); });
+    return o;
   });
-  return out.sort((a,b) => b[0]-a[0]).slice(0, 2).map(([,u,p,d]) => `${u} (${title(d)}, prov. ${title(p)})`).join(' · ');
 }
 
-// ── Lectura de hojas ──
 const PROXIES = [u => u, u => `https://corsproxy.io/?${encodeURIComponent(u)}`, u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`];
 async function fetchText(url){
   let last;
   for (const p of PROXIES){
-    try{ const r = await fetch(p(url), {cache:'no-store'}); if(!r.ok) throw new Error('HTTP '+r.status); const t = await r.text(); if (t.length < 10) throw new Error('vacío'); return t; }
-    catch(e){ last = e; }
+    try{
+      const ctrl = new AbortController(); const t = setTimeout(()=>ctrl.abort(), 9000);
+      const r = await fetch(p(url), {cache:'no-store', signal:ctrl.signal}); clearTimeout(t);
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const txt = await r.text(); if(txt.length < 10) throw new Error('respuesta vacía');
+      return txt;
+    }catch(e){ last = e; }
   }
-  throw last;
+  throw last || new Error('sin respuesta');
 }
+
+function status(msg, err=false){ const s=$('status'); s.textContent=msg||''; s.className='status'+(msg?' show':'')+(err?' err':''); }
+
+// ── Datos ──
+let REGIONES = [], NACIONAL = {}, ICONS = {};
+
+// Símbolos de los servicios (los primeros, iguales a los del mapa original)
+const SYMBOL_FIXED = [
+  ['centro emergencia mujer y familia - regular',['diamond','#FF1A1A']], ['centro emergencia mujer y familia - 24 horas',['circle','#00AEEF']],
+  ['hogares de refugio',['triangle','#D4D924']], ['servicio de atencion rural',['square','#7F3FE0']], ['coordinacion territorial',['dot','#1F2430']],
+  ['unidad de proteccion especial',['triangle','#1F2430']], ['educadores de calle',['square-o','#C8601A']]
+];
+const SYMBOL_POOL = [['circle','#3FA34D'],['diamond','#7F3FE0'],['square','#F2A900'],['triangle','#C2185B'],['circle-o','#3B2E7E'],['square-o','#2FA4E7'],
+  ['diamond','#3FA34D'],['triangle','#F2A900'],['square','#C2185B'],['circle','#7A8392'],['diamond','#1F2430'],['triangle','#2FA4E7'],['square-o','#3FA34D'],['circle-o','#C8102E']];
+const SYMBOLS = {};
+function assignSymbols(names){
+  let i = 0;
+  names.forEach(n => { const f = SYMBOL_FIXED.find(([k]) => norm(n).includes(k)); SYMBOLS[n] = f ? f[1] : SYMBOL_POOL[i++ % SYMBOL_POOL.length]; });
+}
+function symbolSvg(name){
+  const [shape,color] = SYMBOLS[name] || ['dot','#7A8392'];
+  const p = {
+    'diamond':`<path d="M6 .8 11.2 6 6 11.2.8 6z" fill="${color}"/>`,
+    'circle':`<circle cx="6" cy="6" r="5" fill="${color}"/>`,
+    'circle-o':`<circle cx="6" cy="6" r="4.2" fill="none" stroke="${color}" stroke-width="1.6"/>`,
+    'dot':`<circle cx="6" cy="6" r="4.4" fill="${color}"/>`,
+    'triangle':`<path d="M6 .8 11.4 11H.6z" fill="${color}"/>`,
+    'square':`<rect x="1" y="1" width="10" height="10" fill="${color}"/>`,
+    'square-o':`<rect x="1.8" y="1.8" width="8.4" height="8.4" fill="none" stroke="${color}" stroke-width="1.8"/>`
+  }[shape];
+  return `<svg viewBox="0 0 12 12">${p}</svg>`;
+}
+// Clave para cruzar territorios aunque cambien tildes, mayúsculas o guiones
+const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
+let SERV = [];
+
+// Lee CSV o TSV y devuelve filas de celdas
 function parseSheet(raw){
   const lines = raw.replace(/\r\n?/g,'\n').split('\n');
   const tsv = lines.some(l => l.includes('\t'));
   const split = l => tsv ? l.split('\t') : (l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || []).slice(0,-1).map(x => x.replace(/,$/,'').replace(/^"|"$/g,'').replace(/""/g,'"'));
   return lines.map(l => split(l).map(v => (v||'').trim()));
 }
-
-let ISSUES = [], filter = 'all';
-function check(hoja, rows){
-  let h = rows.findIndex(r => r.some(c => norm(c) === 'ubigeo'));
-  if (h < 0) return { error: 'no tiene columna Ubigeo' };
-  const head = rows[h].map(norm);
-  const col = n => head.indexOf(n);
-  const [iU, iD, iP, iT] = [col('ubigeo'), col('departamento') >= 0 ? col('departamento') : col('region'), col('provincia'), col('distrito')];
-  let n = 0, err = 0, warn = 0;
-  const seen = {};
-  rows.slice(h+1).forEach((c, k) => {
-    const fila = h + k + 2;
-    if (!c.some(Boolean)) return;
-    const raw = c[iU] || '', dep = c[iD] || '', prov = c[iP] || '', dist = c[iT] || '';
-    if (!raw && !dist) return;
-    n++;
-    const add = (tipo, problema, anexo = '', sug = '') => { ISSUES.push({ tipo, hoja, fila, ub: raw, dep, prov, dist, problema, anexo, sug }); tipo === 'err' ? err++ : warn++; };
-    const digits = raw.replace(/\D/g,'');
-    const ub = digits.length === 5 ? '0' + digits : digits;
-    if (ub.length !== 6){ add('err', raw ? 'Ubigeo con formato inválido' : 'Fila sin ubigeo', '', suggest(dep, dist, prov)); return; }
-    if (digits.length === 5) add('warn', 'Ubigeo sin el cero inicial (se lee como ' + ub + ')');
-    const ref = ANEXO.ref[ub];
-    if (!ref){ add('err', 'El ubigeo no existe en el anexo', '', suggest(dep, dist, prov)); return; }
-    const [rp, rd] = ref, refTxt = `${title(rd)} · prov. ${title(rp)} · ${title(ANEXO.dep[ub.slice(0,2)])}`;
-    if (dep && !depOk(dep, ub)){ add('err', 'El ubigeo es de otro departamento', refTxt, suggest(dep, dist, prov)); return; }
-    const sd = similar(dist, rd), sp = similar(prov, rp);
-    if (dist && sd < SIM_OK){ add('err', 'El ubigeo corresponde a otro distrito', refTxt, suggest(dep, dist, prov)); return; }
-    if (prov && sp < SIM_OK) add('err', 'La provincia no coincide con el ubigeo', refTxt);
-    else if (dist && sd < 1 && tkey(dist) !== tkey(rd)) add('warn', 'Nombre de distrito escrito distinto', refTxt);
-    else if (prov && sp < 1 && tkey(prov) !== tkey(rp)) add('warn', 'Nombre de provincia escrito distinto', refTxt);
-    // mismo ubigeo usado con nombres distintos dentro de la hoja
-    const key = ub;
-    if (seen[key] && tkey(seen[key].dist) !== tkey(dist) && similar(seen[key].dist, dist) < SIM_OK)
-      add('err', `Ubigeo repetido: la fila ${seen[key].fila} lo usa para "${seen[key].dist}"`, refTxt);
-    else if (!seen[key]) seen[key] = { dist, fila };
-  });
-  return { n, err, warn, ubs: new Set(Object.keys(seen)) };
-}
-
-function missing(ubs){
-  const byDep = {};
-  Object.entries(ANEXO.ref).forEach(([u, [p, d]]) => { if (ubs.has(u)) return; (byDep[u.slice(0,2)] = byDep[u.slice(0,2)] || []).push(`${title(d)} (${u})`); });
-  return byDep;
-}
-
-const gidOf = hoja => (HOJAS[hoja].match(/gid=(\d+)/) || [])[1];
-const filaLink = i => ID_EDICION && gidOf(i.hoja)
-  ? `<a href="https://docs.google.com/spreadsheets/d/${ID_EDICION}/edit#gid=${gidOf(i.hoja)}&range=A${i.fila}" target="_blank" rel="noopener">${i.fila} ↗</a>` : i.fila;
-function render(){
-  const q = tkey($('q').value), fh = $('fHoja').value, fr = $('fReg').value;
-  const list = ISSUES.filter(i => (filter === 'all' || i.tipo === filter) && (!fh || i.hoja === fh) && (!fr || i.ub.replace(/\D/g,'').padStart(6,'0').slice(0,2) === fr || tkey(i.dep) === fr)
-    && (!q || tkey([i.ub, i.dist, i.prov, i.dep, i.anexo].join(' ')).includes(q)));
-  $('tbody').innerHTML = list.length ? list.map(i => `<tr>
-    <td><span class="pill ${i.tipo}">${i.tipo === 'err' ? 'Error' : 'Aviso'}</span></td>
-    <td>${esc(i.hoja)}</td><td class="num">${filaLink(i)}</td><td class="num">${esc(i.ub) || '<span class="muted">—</span>'}</td>
-    <td>${esc(i.dist)}<br><span class="muted">${esc(i.prov)} · ${esc(i.dep)}</span></td>
-    <td>${esc(i.problema)}</td><td>${esc(i.anexo) || '<span class="muted">—</span>'}</td><td>${esc(i.sug) || '<span class="muted">—</span>'}</td></tr>`).join('')
-    : `<tr><td colspan="8" class="empty">${ISSUES.length ? 'No hay resultados con estos filtros.' : 'Todo coincide con el anexo.'}</td></tr>`;
-}
-
-function downloadCSV(){
-  const cols = ['tipo','hoja','fila','ub','dep','prov','dist','problema','anexo','sug'];
-  const head = ['Tipo','Hoja','Fila','Ubigeo','Departamento','Provincia','Distrito','Problema','Según el anexo','Sugerencia'];
-  const q = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
-  const body = ISSUES.map(i => cols.map(c => q(c === 'tipo' ? (i.tipo === 'err' ? 'Error' : 'Aviso') : i[c])).join(','));
-  const blob = new Blob(['\ufeff' + [head.map(q).join(','), ...body].join('\n')], {type:'text/csv;charset=utf-8'});
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'validacion_ubigeos.csv'; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
-}
-
-async function loadAnexo(){
-  if (!ANEXO_URL) return 'copia incluida en la página';
-  try{
-    const rows = parseSheet(await fetchText(ANEXO_URL));
-    const h = rows.findIndex(r => r.some(c => norm(c) === 'ubigeo')); const head = rows[h].map(norm);
-    const [iU,iD,iP,iT] = ['ubigeo','departamento','provincia','distrito'].map(n => head.indexOf(n));
-    const ref = {}, dep = {};
-    rows.slice(h+1).forEach(c => { const u = (c[iU]||'').replace(/\D/g,'').padStart(6,'0'); if (u === '000000' || !c[iT]) return;
-      let p = c[iP]||''; const dn = c[iD]||'';
-      // si la provincia viene pegada al departamento ("LAMBAYEQUE CHICLAYO"), se separa
-      if (dn && tkey(p).startsWith(tkey(dn) + ' ')) p = p.slice(dn.length).trim();
-      ref[u] = [p, c[iT]]; if (dn && !dep[u.slice(0,2)]) dep[u.slice(0,2)] = dn; });
-    if (Object.keys(ref).length < 100) throw new Error('pocas filas');
-    ANEXO = { ref, dep: Object.assign({}, ANEXO.dep, dep) };
-    return 'hoja Anexo_ubigeo';
-  }catch(e){ return 'copia incluida en la página (no se pudo leer la hoja del anexo)'; }
-}
-(async function init(){
-  const fuenteAnexo = await loadAnexo();
-  const names = Object.keys(HOJAS);
-  const res = await Promise.all(names.map(n => fetchText(HOJAS[n]).then(t => [n, t]).catch(e => [n, null, e])));
-  const cards = []; let first = null; const failed = [];
-  res.forEach(([n, raw, e]) => {
-    if (!raw){ failed.push(n); cards.push(`<div class="card"><h2>${esc(n)}</h2><p class="status err">No se pudo leer la hoja.</p></div>`); return; }
-    const r = check(n, parseSheet(raw));
-    if (r.error){ cards.push(`<div class="card"><h2>${esc(n)}</h2><p class="status err">La hoja ${esc(r.error)}.</p></div>`); return; }
-    if (!first) first = [n, r];
-    cards.push(`<div class="card"><h2>${esc(n)}</h2><div class="nums">
-      <div><b>${r.n}</b><span>filas revisadas</span></div>
-      <div class="c-err"><b>${r.err}</b><span>errores</span></div>
-      <div class="c-warn"><b>${r.warn}</b><span>avisos</span></div></div></div>`);
-  });
-  $('cards').innerHTML = cards.join('');
-  $('status').textContent = failed.length ? 'No se pudieron leer: ' + failed.join(', ') + '.' : `Revisado contra ${Object.keys(ANEXO.ref).length} distritos del anexo (${fuenteAnexo}).`;
-  if (failed.length) $('status').className = 'status err';
-
-  if (first && first[0] === names[0]){
-    const miss = missing(first[1].ubs); const deps = Object.keys(miss).sort();
-    const total = deps.reduce((a,d) => a + miss[d].length, 0);
-    if (total){
-      $('missTitle').textContent = `${total} distritos del anexo sin fila en ${first[0]}`;
-      $('miss').innerHTML = deps.map(d => `<div><b>${esc(title(ANEXO.dep[d]))} (${miss[d].length})</b>${miss[d].map(esc).join(', ')}</div>`).join('');
-      $('missBox').hidden = false;
-    }
+// Fila de encabezado: la primera que tenga "Departamento" o "Región"
+function headerRow(rows){
+  for (let i = 0; i < Math.min(rows.length, 6); i++){
+    const j = rows[i].findIndex(c => ['departamento','region'].includes(norm(c)));
+    if (j >= 0) return { i, reg: j };
   }
-  $('fHoja').innerHTML = '<option value="">Todas las hojas</option>' + names.map(n => `<option>${esc(n)}</option>`).join('');
-  $('fReg').innerHTML = '<option value="">Todos los departamentos</option>' + Object.entries(ANEXO.dep).map(([c, d]) => `<option value="${c}">${esc(title(d))}</option>`).join('');
-  document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => {
-    filter = b.dataset.f; document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-pressed', x === b)); render(); }));
-  ['fHoja','fReg'].forEach(id => $(id).addEventListener('change', render));
-  $('q').addEventListener('input', render);
-  $('csv').addEventListener('click', downloadCSV);
-  $('tools').hidden = $('tableWrap').hidden = false;
-  render();
+  return { i: 0, reg: 0 };
+}
+const colIdx = (head, ref) => /^[A-Z]{1,2}$/.test(ref) ? ref.split('').reduce((a,ch) => a*26 + ch.charCodeAt(0) - 64, 0) - 1 : head.indexOf(norm(ref));
+const ubigeo = v => { const d = String(v||'').replace(/\D/g,''); return d ? d.padStart(d.length % 2 ? d.length + 1 : d.length, '0') : ''; };
+// Clave de provincia y distrito: por ubigeo si existe; si no, por nombre
+function terrKeys(ub, prov, dist){
+  if (ub.length >= 6) return { pk: ub.slice(0,4), dk: has(dist) ? ub.slice(0,6) : '' };
+  if (ub.length === 4) return { pk: ub, dk: '' };
+  return { pk: tkey(prov) || (has(dist) ? '-' : ''), dk: tkey(dist) };
+}
+let FUENTES_AUTO = {};
+
+async function loadData(){
+  const names = Object.keys(CONFIG.HOJAS).filter(k => !['iconos','serv_impl'].includes(k) && CONFIG.HOJAS[k]);
+  const servP = CONFIG.HOJAS.serv_impl ? fetchText(CONFIG.HOJAS.serv_impl).then(raw => {
+    const rows = parseSheet(raw); const h = headerRow(rows); const head = rows[h.i].map(norm);
+    const col = n => head.indexOf(n);
+    const [iU,iP,iD,iC,iM,iN,iK] = [col('ubigeo'),col('provincia'),col('distrito'),col('centro'),col('modalidad'),col('recuento'),col('categoria')];
+    SERV = rows.slice(h.i+1).map(c => {
+      const centro = c[iC]||'', mod = iM >= 0 ? (c[iM]||'') : '';
+      const prov = c[iP]||'', dist = c[iD]||'';
+      return { reg:tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
+               servicio: mod ? `${centro} - ${mod}` : centro, cat: iK >= 0 ? (c[iK]||'') : '', n: num(c[iN]) ?? 1 };
+    }).filter(s => s.reg && s.servicio);
+  }).catch(() => { SERV = null; }) : Promise.resolve();
+  const iconsP = CONFIG.HOJAS.iconos ? fetchText(CONFIG.HOJAS.iconos).then(raw => {
+    ICONS = {};
+    parseSheet(raw).slice(1).forEach(([k, f]) => {
+      if (has(k) && has(f)) ICONS[norm(k)] = /^https?:\/\//i.test(f) ? [f] : [...new Set([f.normalize('NFC'), f.normalize('NFD')])].map(v => pathUrl(CONFIG.CARPETA_ICONOS, v));
+    });
+  }).catch(() => {}) : Promise.resolve();
+  const raws = await Promise.all(names.map(k => fetchText(CONFIG.HOJAS[k]).then(r => [k, r]).catch(e => [k, null, e])));
+  const failed = raws.filter(x => x[1] === null).map(x => x[0]);
+  const byKey = {}; const order = [];
+  const regionOf = name => {
+    const key = tkey(name);
+    if (!byKey[key]){ byKey[key] = { region: name, _subs: {}, _subOrder: [] }; order.push(key); }
+    const R = byKey[key];
+    // Nombre para mostrar: se prefiere el que tiene tildes y mayúsculas/minúsculas
+    if ((name !== name.toUpperCase() && R.region === R.region.toUpperCase()) || (/[áéíóúñ]/i.test(name) && !/[áéíóúñ]/i.test(R.region))) R.region = name;
+    return R;
+  };
+  FUENTES_AUTO = {};
+  raws.forEach(([hoja, raw]) => {
+    if (!raw) return;
+    const rows = parseSheet(raw); const h = headerRow(rows);
+    const head = rows[h.i].map(norm);
+    const iProv = head.indexOf('provincia'), iDist = head.indexOf('distrito'), iUb = head.indexOf('ubigeo');
+    const map = Object.entries(CONFIG.CAMPOS[hoja] || {}).map(([code, ref]) => [code, colIdx(head, ref)]).filter(([,i]) => i >= 0);
+    // Fuente tomada del título de la columna, lo que está entre paréntesis: "Trabajo infantil (ENAHO, 2025)"
+    if (h.i > 0) map.forEach(([code, i]) => {
+      for (let j = i; j >= 0; j--){ const title = rows[0][j]; if (has(title)) { const m = title.match(/\(([^()]*)\)\s*$/); if (m) FUENTES_AUTO[code] = m[1]; break; } }
+    });
+    rows.slice(h.i+1).forEach(c => {
+      if (!has(c[h.reg])) return;
+      const R = regionOf(c[h.reg]);
+      const prov = iProv >= 0 ? c[iProv] : '', dist = iDist >= 0 ? c[iDist] : '';
+      const { pk, dk } = terrKeys(iUb >= 0 ? ubigeo(c[iUb]) : '', prov, dist);
+      let target = R;
+      if (pk){
+        if (!R._subs[pk]){ R._subs[pk] = { nombre: prov || 'Sin provincia', rec: {}, dists: {}, distOrder: [] }; R._subOrder.push(pk); }
+        const P = R._subs[pk]; target = P.rec;
+        if (dk){
+          if (!P.dists[dk]){ P.dists[dk] = { nombre: dist, rec: {} }; P.distOrder.push(dk); }
+          target = P.dists[dk].rec;
+        }
+      }
+      map.forEach(([code, i]) => {
+        if (has(c[i])) target[code] = c[i];
+        else if (CONFIG.CERO_SI_VACIO.includes(code) && !(code in target)) target[code] = '0';
+      });
+    });
+  });
+  // Si falta el total de un nivel, se suma desde el nivel inferior
+  const sumUp = (dest, list) => {
+    if (has(dest.pob_total) || !list.length) return;
+    POB_SUM.forEach(k => { const vals = list.map(r => num(r[k])).filter(v => v != null); if (vals.length) dest[k] = String(vals.reduce((a,b)=>a+b,0)); });
+  };
+  Object.values(byKey).forEach(R => {
+    R._subOrder.forEach(pk => { const P = R._subs[pk]; sumUp(P.rec, P.distOrder.map(dk => P.dists[dk].rec)); });
+    sumUp(R, R._subOrder.map(pk => R._subs[pk].rec));
+    R._nProv = R._subOrder.filter(pk => pk !== '-').length;
+    R._nDist = R._subOrder.reduce((a,pk) => a + R._subs[pk].distOrder.length, 0);
+    R._nDistOf = Object.fromEntries(R._subOrder.map(pk => [pk, R._subs[pk].distOrder.length]));
+    // Alcaldesas = mujeres alcaldesas provinciales + distritales
+    const alc = ['alc_prov_m','alc_prov_h','alc_dist_m','alc_dist_h'].map(k => num(R[k]));
+    if (alc.some(v => v != null)){
+      R.alcaldesas = String((alc[0]||0) + (alc[2]||0));
+      R._alc_detalle = `${alc[0]||0} provincial${(alc[0]||0)===1?'':'es'} y ${alc[2]||0} distrital${(alc[2]||0)===1?'':'es'}, de ${alc.reduce((a,v)=>a+(v||0),0)} alcaldías`;
+    }
+  });
+  await iconsP; await servP;
+  // Territorios que solo aparecen en Serv_impl se agregan a los filtros (sin datos de población)
+  (SERV || []).forEach(s => {
+    const R = byKey[s.reg]; if (!R || !s.pk) return;
+    if (!R._subs[s.pk]){ R._subs[s.pk] = { nombre: s.prov, rec: {}, dists: {}, distOrder: [], soloServ: true }; R._subOrder.push(s.pk); }
+    const P = R._subs[s.pk];
+    if (s.dk && !P.dists[s.dk]){ P.dists[s.dk] = { nombre: s.dist, rec: {}, soloServ: true }; P.distOrder.push(s.dk); }
+  });
+  assignSymbols([...new Set((SERV || []).map(s => s.servicio))]);
+  NACIONAL = byKey['nacional'] || {};
+  REGIONES = order.filter(k => k !== 'nacional').map(k => byKey[k]);
+  return failed;
+}
+// Datos que existen en alguna hoja (si están vacíos se muestra "No hay…")
+const MAPPED = new Set(Object.values(CONFIG.CAMPOS).flatMap(Object.keys));
+const POB_SUM = ['pob_total','pob_mujer','pob_hombre','pob_discapacidad','pob_0_5','pob_6_11','pob_12_17','pob_18_29','pob_30_59','pob_60_mas'];
+
+// Vista de una región, provincia o distrito: hereda los datos regionales y
+// reemplaza los que existen a ese nivel (_local).
+function buildView(Rg, pk, dk){
+  const V = Object.assign({}, Rg);
+  V._region = Rg; V._tipo = 'Región'; V._nombre = Rg.region; V._local = null;
+  const P = pk ? Rg._subs[pk] : null;
+  if (P){
+    const D = dk ? P.dists[dk] : null;
+    const rec = D ? D.rec : P.rec;
+    // los porcentajes regionales no sirven para otro nivel
+    Object.keys(V).forEach(k => { if (k.startsWith('pct_') && !(k in rec)) delete V[k]; });
+    Object.assign(V, rec);
+    V._local = new Set(Object.keys(rec));
+    V._tipo = D ? 'Distrito' : 'Provincia'; V._nombre = D ? D.nombre : P.nombre; V._prov = P.nombre;
+    V._nDistProv = Rg._nDistOf[pk] ?? P.distOrder.length; V._pk = pk; V._dk = dk || '';
+  }
+  return V;
+}
+const isSub = R => R._tipo !== 'Región';
+const fullName = R => `${R._tipo} ${R._nombre}`;
+const crumb = R => R._tipo === 'Distrito' ? `Provincia ${R._prov} · Región ${R.region}` : R._tipo === 'Provincia' ? `Región ${R.region}` : '';
+function lvlNote(R, fields){
+  if (!isSub(R) || fields.some(f => R._local.has(f))) return '';
+  return `<div class="lvl-note">Información disponible solo a nivel regional (${esc(R.region)})</div>`;
+}
+const FUENTE_DE = { trabajo_infantil:'trab_inf_mujer', analfabetismo:'analf_mujer', alcaldesas:'alc_prov_m' };
+const fuente = k => CONFIG.FUENTES[k] || FUENTES_AUTO[k] || FUENTES_AUTO[FUENTE_DE[k]] || '';
+// Íconos: el nombre de la columna Indicador de la hoja Iconos
+const icon = (name, cls='ic') => { const u = ICONS[norm(name)]; if (!u) return '';
+  return `<img class="${cls}" src="${u[0]}" data-alt="${u[1]||''}" alt="" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.dataset.alt=''}else{this.remove()}">`; };
+const withIcon = (name, html) => { const i = icon(name); return i ? `<div class="with-ic">${i}<div>${html}</div></div>` : html; };
+const srcLine = k => fuente(k) ? `<div class="src">Fuente: ${esc(fuente(k))}</div>` : '';
+
+// "Ene - Set 2026" → "Al cierre de setiembre 2026"
+const MESES = {ene:'enero',feb:'febrero',mar:'marzo',abr:'abril',may:'mayo',jun:'junio',jul:'julio',ago:'agosto',set:'setiembre',sep:'setiembre',oct:'octubre',nov:'noviembre',dic:'diciembre'};
+function corte(periodo){
+  if (!has(periodo)) return '';
+  const m = norm(periodo).match(/-\s*([a-z]{3})[a-z]*\.?\s*(\d{4})/);
+  return m && MESES[m[1]] ? `Al cierre de ${MESES[m[1]]} ${m[2]}` : periodo;
+}
+
+// Portadas: Fotos Regiones/<Región>.png  ·  Mapas: imagenes/<region>_mapa.png
+const IMG_CACHE = {};
+const pathUrl = (folder, file) => folder.split('/').filter(Boolean).map(encodeURIComponent).join('/') + '/' + encodeURIComponent(file);
+function probe(url){
+  if (!(url in IMG_CACHE)) IMG_CACHE[url] = new Promise(res => { const i = new Image(); i.onload = () => res(true); i.onerror = () => res(false); i.src = url; });
+  return IMG_CACHE[url];
+}
+async function firstExisting(folder, names){
+  for (const n of names) { const u = pathUrl(folder, n); if (await probe(u)) return u; }
+  return null;
+}
+const fileBase = R => norm(R.region).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+async function resolveImages(R){
+  if (R._img) return; R._img = true;
+  const name = R.region.trim();
+  const variants = [...new Set([name.normalize('NFC'), name.normalize('NFD')])];
+  R._portada = await firstExisting(CONFIG.CARPETA_PORTADAS, variants.flatMap(v => ['png','jpg','jpeg','webp'].map(e => `${v}.${e}`)));
+  R._mapa = await firstExisting(CONFIG.CARPETA_IMAGENES, ['png','jpg','jpeg','webp'].map(e => `${fileBase(R)}_mapa.${e}`));
+}
+
+// ── Piezas comunes ──
+const stripe = () => `<div class="stripe"><i></i><i></i><i></i><i></i><i></i></div>`;
+const footer = (R, n) => `<div class="foot"><span>Resumen estadístico · ${esc(fullName(R))}${isSub(R)?` (${esc(crumb(R))})`:''}</span><span>${n}</span></div>${stripe()}`;
+const band = R => `<div class="band">${esc(fullName(R))}${isSub(R)?`<div class="band-sub">${esc(crumb(R))}</div>`:''}</div>`;
+
+function donut(p, color){
+  const r = 15.5, c = 2*Math.PI*r, v = p==null ? 0 : Math.max(0, Math.min(100,p));
+  return `<svg viewBox="0 0 40 40" aria-hidden="true">
+    <circle cx="20" cy="20" r="${r}" fill="none" stroke="#ECEEF2" stroke-width="5"/>
+    <circle cx="20" cy="20" r="${r}" fill="none" stroke="${color}" stroke-width="5" stroke-dasharray="${(v/100*c).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 20 20)"/>
+    <text x="20" y="21.6" text-anchor="middle" font-size="6.4" font-family="Public Sans, Arial" fill="#3B2E7E">${pTxt(p)}</text></svg>`;
+}
+
+// ── Página 1: portada ──
+function pageCover(R){
+  return `<section class="page">
+    <div class="cover-top">
+      <div class="cover-logo"><img src="${CONFIG.CARPETA_IMAGENES}logo_mimp.png" alt="MIMP"></div>
+      <div class="cover-kicker">RESUMEN ESTADÍSTICO</div>
+      <div class="cover-name" style="${fullName(R).length > 26 ? 'font-size:32pt' : fullName(R).length > 18 ? 'font-size:38pt' : ''}">${esc(fullName(R))}</div>
+      ${isSub(R) ? `<div class="cover-sub">${esc(crumb(R))}</div>` : ''}
+      ${R._portada ? `<div class="cover-photo"><div class="ph" style="background-image:url('${R._portada}')" role="img" aria-label="Paisaje de ${esc(R.region)}"></div></div>` : ''}
+      <div class="cover-meta">
+        <div class="cover-org">Ministerio de la Mujer y<br>Poblaciones Vulnerables</div>
+        ${has(R.periodo) ? `<div class="cover-corte">${esc(corte(R.periodo))}</div>` : ''}
+      </div>
+    </div>
+    <div class="cover-bottom">
+      <p class="lead">El Ministerio de la Mujer y Poblaciones Vulnerables (MIMP) es el ente rector del Poder Ejecutivo que <b>lidera las políticas y acciones</b> para promover la igualdad de oportunidades entre mujeres y hombres y garantizar la protección integral de las poblaciones en situación de vulnerabilidad. Su labor se basa en una <b>atención descentralizada, inclusiva y orientada a las necesidades del territorio.</b></p>
+      <div>Entre las principales acciones que realiza se encuentran:
+        <ul><li>Promover la igualdad de oportunidades entre mujeres y hombres.</li><li>Proteger a las poblaciones en situación de vulnerabilidad.</li><li>Prevenir y atender la violencia contra las mujeres.</li><li>Proteger los derechos de niñas, niños y adolescentes.</li></ul>
+      </div>
+    </div>
+    ${stripe()}
+  </section>`;
+}
+
+// ── Página 2: autoridades ──
+function authority(R, p, defCargo){
+  if(!has(R[p+'_nombre'])) return '';
+  const cargo = R[p+'_cargo'] || defCargo;
+  const items = [['Fecha de nacimiento',R[p+'_nacimiento']],['Estudios',R[p+'_estudios']],['Organización política',R[p+'_partido']],
+    ['Sentencias por delitos dolosos',R[p+'_sent_penales']],['Sentencias por demandas',R[p+'_sent_civiles']]].filter(x=>has(x[1]));
+  const foto = has(R[p+'_foto']);
+  return `<div class="authority${foto?'':' no-photo'}">
+    ${foto ? `<div class="auth-photo"><div class="ph" style="${bg(R[p+'_foto'])}" role="img" aria-label="${esc(R[p+'_nombre'])}"></div></div>` : ''}
+    <div><div class="auth-role">${esc(cargo.replace(/\.$/,''))} de ${esc(R.region)}</div>
+      <div class="auth-name">${esc(R[p+'_nombre'])}</div>
+      <dl class="auth-list">${items.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
+    </div></div>`;
+}
+function pageAuthorities(R, n){
+  const body = authority(R,'gob','Gobernador Regional') + authority(R,'vgob','Vicegobernador Regional');
+  if(!body) return '';
+  return `<section class="page">${band(R)}<div class="page-body"><div><span class="h2">Autoridades regionales</span></div>${isSub(R) ? `<div class="lvl-note">Corresponden al Gobierno Regional de ${esc(R.region)}</div>` : ''}${body}
+    ${srcLine('autoridades')}</div>${footer(R,n)}</section>`;
+}
+
+// ── Página 3: perfil territorial ──
+function territorio(R){
+  const Rg = R._region;
+  const counts = Rg._nProv || Rg._nDist ? `<b>${fmtN(Rg._nProv)} provincias</b> y <b>${fmtN(Rg._nDist)} distritos</b>` : '';
+  if (R._tipo === 'Región')
+    return `<p>${counts ? `${esc(Rg.region)} tiene ${counts}` : `${esc(Rg.region)}: información disponible solo a nivel regional`}</p>`;
+  const top = R._tipo === 'Provincia'
+    ? `La provincia de ${esc(R._nombre)} tiene <b>${fmtN(R._nDistProv)} distritos</b>`
+    : `El distrito de ${esc(R._nombre)} pertenece a la provincia de ${esc(R._prov)}`;
+  return `<p>${top}</p><p class="reg">Región ${esc(Rg.region)}${counts ? ` · ${counts}` : ''}</p>`;
+}
+function pageProfile(R, n){
+  const T = num(R.pob_total);
+  const hasInd = ['trab_inf_mujer','trab_inf_hombre','jefas_hogar','analf_mujer','analf_hombre','alcaldesas','actividades'].some(k => has(R[k]));
+  const groups = [
+    ['Mujer','pob_mujer','#7A45E0','pct_mujer'],['Hombre','pob_hombre','#7A45E0','pct_hombre'],['Población con<br>discapacidad','pob_discapacidad','#F0616D','pct_discapacidad'],
+    ['Primera infancia<br>(0 a 5)','pob_0_5','#F2A900','pct_0_5'],['Infancia<br>(6 a 11)','pob_6_11','#F2A900','pct_6_11'],['Adolescentes<br>(12 a 17)','pob_12_17','#F2A900','pct_12_17'],
+    ['Juventud<br>(18 a 29)','pob_18_29','#F2A900','pct_18_29'],['Adulto<br>(30 a 59)','pob_30_59','#F2A900','pct_30_59'],['Adultos mayores<br>(60 a más)','pob_60_mas','#F2A900','pct_60_mas']
+  ].filter(g => has(R[g[1]]));
+  const ICON_POB = {pob_mujer:'Mujer',pob_hombre:'Hombre',pob_discapacidad:'Población con discapacidad',pob_0_5:'Primera infancia',pob_6_11:'Infancia',pob_12_17:'Adolescentes',pob_18_29:'Juventud',pob_30_59:'Adulto',pob_60_mas:'Adultos mayores'};
+  const prob = [
+    ['violencia_mujer','Violencia familiar contra la mujer**', true, '', 'Violencia familiar'],
+    ['embarazo_adol','Embarazo adolescente', true, '', 'Embarazo adolescente'],
+    ['feminicidio','Víctimas con características de feminicidio', false, 'n', 'Feminicidio'],
+    ['nna_riesgo','Niñas y niños de 9 a 17 años en riesgo de desprotección familiar', false, 'n', 'Riesgo de desprotección'],
+    ['am_discriminacion','Personas adultas mayores que sufren discriminación', false, '', 'Discriminación adultos mayores'],
+    ['pcd_discriminacion','Personas con discapacidad que sufren discriminación', false, '', 'Discriminación discapacidad']
+  ].filter(x => has(R[x[0]]));
+  const svc = [
+    ['Niñas, niños y adolescentes','var(--amber)',[
+      ['demuna','Defensorías Municipales del Niño y el Adolescente (DEMUNA)', has(R.demuna_acreditadas)?`Existen ${nTxt(R.demuna_acreditadas)} DEMUNA acreditadas`:'', 'No hay Defensorías Municipales del Niño y el Adolescente (DEMUNA)'],
+      ['juguemos','Juguemos en DEMUNA','', 'No hay Juguemos en DEMUNA'],
+      ['ponte_modo_ninez','Estrategias Ponte en Modo Niñez en DEMUNA operativas','', 'No hay estrategias Ponte en Modo Niñez operativas']]],
+    ['Personas con discapacidad','#2FA4E7',[['oredis','Oficina Regional de Atención a las Personas con Discapacidad (OREDIS)','', 'No hay Oficina Regional de Atención a las Personas con Discapacidad (OREDIS)']]],
+    ['Adultos mayores','#3FA34D',[['ciam','Centros Integrales del Adulto Mayor (CIAM)','', 'No hay Centros Integrales del Adulto Mayor (CIAM)']]],
+    ['Dirección de Beneficencias','var(--violet)',[['beneficencias','Sociedades de Beneficencia','', 'No hay Sociedades de Beneficencia']]]
+  ].map(([t,c,items]) => [t,c,items.filter(i => MAPPED.has(i[0]) || has(R[i[0]]))]).filter(g=>g[2].length);
+  const ICON_SVC = {'Niñas, niños y adolescentes':'Servicios NNA','Personas con discapacidad':'Servicios discapacidad','Adultos mayores':'Servicios adultos mayores','Dirección de Beneficencias':'Beneficencias'};
+  const pair = (lbl, m, h, key, ic) => (has(R[m])||has(R[h])) ? `<div class="ind">${withIcon(ic, `
+      <div class="row">Mujer: <b>${fmtP(R[m])}</b></div><div class="row">Hombre: <b>${fmtP(R[h])}</b></div>
+      <div class="lbl">${lbl}</div>${srcLine(key)}`)}</div>` : '';
+  const single = (key, lbl, isN, ic, extra) => has(R[key]) ? `<div class="ind">${withIcon(ic, `<div class="k">${isN?nTxt(R[key]):fmtP(R[key])}</div><div class="lbl">${lbl}</div>${extra?`<div class="row" style="font-size:8pt">${esc(extra)}</div>`:''}${srcLine(key)}`)}</div>` : '';
+  return `<section class="page">${band(R)}<div class="page-body">
+    <div class="title-c"><h2>Perfil territorial</h2>
+      ${territorio(R)}</div>
+    <div class="cols divided">
+      <div class="col">
+        <div><span class="h2">Población censada</span>${T?`<div class="pop-total">${fmtN(T)} habitantes</div>`:''}</div>
+        ${lvlNote(R, ['pob_total'])}
+        <div class="donuts">${groups.map(([l,k,c,pk]) => `<div class="donut">${icon(ICON_POB[k],'ic-d')}${donut(has(R[pk]) ? pctNum(R[pk]) : share(num(R[k]),T),c)}<div class="donut-lbl">${l}</div><div class="donut-n">(${nTxt(R[k])})</div></div>`).join('')}</div>
+        ${srcLine('poblacion')}
+        ${hasInd ? `<div><span class="h2">Indicadores</span></div>${lvlNote(R, ['trab_inf_mujer','jefas_hogar','analf_mujer','alcaldesas','actividades'])}
+        <div class="ind-grid">
+          ${pair('Trabajo infantil','trab_inf_mujer','trab_inf_hombre','trabajo_infantil','Trabajo infantil')}
+          ${single('jefas_hogar','Mujeres jefas de hogar',false,'Mujeres jefas de hogar')}
+          ${pair('Analfabetismo*','analf_mujer','analf_hombre','analfabetismo','Analfabetismo')}
+          ${single('alcaldesas','Mujeres en cargos políticos (alcaldesas)', true, 'Alcaldesas', R._alc_detalle)}
+          ${has(R.actividades) ? `<div class="ind" style="grid-column:1/-1">${withIcon('Actividades económicas', `<div class="k">${esc(R.actividades)}</div><div class="lbl">Principales actividades económicas</div>`)}</div>`:''}
+        </div>
+        ${has(R.analf_mujer)||has(R.analf_hombre) ? '<div class="note">(*) Porcentaje calculado respecto al total poblacional de su mismo sexo en cada región. Comprende residentes de 15 años a más.</div>' : ''}` : ''}
+      </div>
+      <div class="col">
+        ${prob.length ? `<div><span class="h2">Problemática social vinculada al sector</span></div>${lvlNote(R, prob.map(p=>p[0]))}
+        <div class="prob-grid">${prob.map(([k,l,nac,t,ic]) => `<div class="prob">${withIcon(ic, `<div class="k">${t==='n'?nTxt(R[k]):fmtP(R[k])}</div>
+          <div class="lbl">${l}</div>${k==='violencia_mujer' && [R.viol_psicologica,R.viol_fisica,R.viol_sexual].some(has) ? `<div class="src">${[['Psicológica',R.viol_psicologica],['Física',R.viol_fisica],['Sexual',R.viol_sexual]].filter(x=>has(x[1])).map(([a,b])=>`${a} ${fmtP(b)}`).join(' · ')}</div>`:''}${nac && has(NACIONAL[k]) ? `<div class="nac">Nacional: ${fmtP(NACIONAL[k])}</div>`:''}${srcLine(k)}`)}</div>`).join('')}</div>
+        <div class="note">(**) Violencia familiar contra la mujer de 15 a 49 años de edad, ejercida alguna vez por el esposo o compañero.</div>` : ''}
+        ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>${lvlNote(R, ['demuna','juguemos','ponte_modo_ninez','oredis','ciam','beneficencias'])}
+        ${svc.map(([t,c,items]) => `<div class="svc-group" style="--c:${c}"><div class="svc-head">${icon(ICON_SVC[t],'ic-h')}${t}</div>
+          ${items.map(([k,l,s,none]) => !has(R[k]) || num(R[k]) === 0
+            ? `<div class="svc-item"><span class="n">–</span><span class="t none">${none}</span></div>`
+            : `<div class="svc-item"><span class="n">${nTxt(R[k])}</span><span class="t">${l}${s?`<small>${s}</small>`:''}</span></div>`).join('')}</div>`).join('')}` : ''}
+      </div>
+    </div></div>${footer(R,n)}</section>`;
+}
+
+// ── Página 4: servicios implementados ──
+function servRows(R){
+  if (!SERV) return null;
+  const rk = tkey(R.region);
+  return SERV.filter(s => s.reg === rk && (!R._pk || s.pk === R._pk) && (!R._dk || s.dk === R._dk));
+}
+function categoryOf(s){
+  if (has(s.cat)) return s.cat;
+  const n = norm(s.servicio);
+  const c = CONFIG.CATEGORIAS.find(c => c.claves.some(k => n.includes(norm(k))));
+  return c ? c.nombre : CONFIG.OTROS;
+}
+function groupServices(rows){
+  const map = {}; const order = [];
+  rows.forEach(s => { if (!map[s.servicio]){ map[s.servicio] = { nombre:s.servicio, n:0, cat:categoryOf(s) }; order.push(s.servicio); } map[s.servicio].n += s.n; });
+  return order.map(k => map[k]);
+}
+const atencionDe = (R, nombre) => {
+  if (isSub(R)) return null;
+  const a = CONFIG.ATENCIONES.find(a => norm(nombre).includes(norm(a.servicio)));
+  return a && has(R[a.campo]) ? { v:num(R[a.campo]), l:a.etiqueta || 'atenciones' } : null;
+};
+function pageServices(R, n){
+  const rows = servRows(R);
+  if (rows === null) return '';
+  const list = groupServices(rows);
+  const pad = x => String(x).padStart(2,'0');
+  const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
+  list.forEach(s => { if (!cats.includes(s.cat)) cats.push(s.cat); });
+  const legend = items => `<div class="leg">${items.map(s => { const a = atencionDe(R, s.nombre);
+    return `${symbolSvg(s.nombre)}<span><b>${pad(s.n)}</b> ${esc(s.nombre)}${a ? ` (${fmtN(a.v)} ${a.l})` : ''}</span>`; }).join('')}</div>`;
+  const blocks = cats.map(cname => {
+    const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === cname) || {};
+    const items = list.filter(s => s.cat === cname);
+    if (!items.length && !cfg.vacio) return '';
+    const ats = items.map(s => atencionDe(R, s.nombre)).filter(a => a && a.l === 'atenciones');
+    const tot = ats.length ? `<div class="tot"><span class="big">${fmtN(ats.reduce((a,x)=>a+x.v,0))}</span><span>total de atenciones</span></div>` : '';
+    return `<div class="block"><h3>${icon(cfg.icono,'ic-h')}${esc(cname)}</h3>${items.length ? tot + legend(items) : `<p class="muted">${esc(cfg.vacio)}</p>`}</div>`;
+  }).filter(Boolean);
+  const half = Math.ceil(blocks.length / 2);
+  const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
+  return `<section class="page">${band(R)}<div class="page-body">
+    <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>
+      <div class="svc-counts"><b>${pad(list.length)}</b> servicios MIMP<br><b>${pad(list.reduce((a,s)=>a+s.n,0))}</b> centros</div></div>
+    ${isSub(R) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
+    ${list.length ? `<div class="cols divided">
+      <div class="col">${blocks.slice(0,half).join('<hr class="sep">')}</div>
+      <div class="col">${blocks.slice(half).join('<hr class="sep">')}</div>
+    </div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
+    ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
+  </div>${footer(R,n)}</section>`;
+}
+
+// ── Mapa de servicios (generado a partir de los límites distritales) ──
+let TOPO = null, GEOMS = [];
+async function loadMap(){
+  try{
+    if (!window.d3 || !window.topojson) throw new Error('librerías');
+    const r = await fetch(CONFIG.MAPA); if (!r.ok) throw new Error('HTTP ' + r.status);
+    TOPO = await r.json();
+    const obj = TOPO.objects[Object.keys(TOPO.objects)[0]];
+    GEOMS = obj.geometries;
+  }catch(e){ TOPO = null; }
+}
+const titleCase = s => (s||'').toLowerCase().replace(/(^|[\s(-])([a-záéíóúñü])/g, (m,a,b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y|El)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
+function mapSvg(R){
+  if (!TOPO) return '';
+  const Rg = R._region;
+  const provs = new Set(R._tipo === 'Región' ? Rg._subOrder.filter(k => /^\d{4}$/.test(k)) : [R._pk]);
+  const geoms = GEOMS.filter(g => provs.has(String(g.properties.IDPROV)));
+  if (!geoms.length) return '';
+  const W = 800, H = 470, coll = { type:'GeometryCollection', geometries: geoms };
+  const fc = topojson.feature(TOPO, coll);
+  const proj = d3.geoMercator().fitExtent([[12,12],[W-12,H-12]], fc);
+  const path = d3.geoPath(proj);
+  const byDist = {}; fc.features.forEach(f => byDist[String(f.properties.IDDIST)] = f);
+  const regionView = R._tipo === 'Región';
+  // fondo: distritos
+  const fills = fc.features.map(f => {
+    const hi = R._tipo === 'Distrito' && String(f.properties.IDDIST) === R._dk;
+    return `<path d="${path(f)}" fill="${hi ? '#F4C9CF' : '#E7E9ED'}" stroke="${regionView ? '#F1F2F5' : '#FFFFFF'}" stroke-width="${regionView ? .6 : 1.2}"/>`;
+  }).join('');
+  const provLines = regionView ? `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a !== b && a.properties.IDPROV !== b.properties.IDPROV))}" fill="none" stroke="#FFFFFF" stroke-width="2.6"/>` : '';
+  const outline = `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a === b))}" fill="none" stroke="#C3C8D0" stroke-width="1.2"/>`;
+  // etiquetas: provincias (vista regional) o distritos
+  const label = (x, y, txt, size) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round">${esc(txt)}</text><text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#7A8392">${esc(txt)}</text>`;
+  const provCentroid = {};
+  [...provs].forEach(pk => { const g = geoms.filter(x => String(x.properties.IDPROV) === pk); if (g.length) provCentroid[pk] = path.centroid(topojson.merge(TOPO, g)); });
+  const labels = regionView
+    ? [...provs].filter(pk => provCentroid[pk]).map(pk => { const g = geoms.find(x => String(x.properties.IDPROV) === pk);
+        const name = (Rg._subs[pk] && Rg._subs[pk].nombre) || g.properties.NOMBPROV; const [x,y] = provCentroid[pk]; return label(x, y + 22, titleCase(name), 14); }).join('')
+    : fc.features.map(f => { const [x,y] = path.centroid(f); const size = fc.features.length > 30 ? 8 : 10;
+        const known = (Rg._subs[R._pk] || {dists:{}}).dists[String(f.properties.IDDIST)];
+        return label(x, y + 14, titleCase((known && known.nombre) || f.properties.NOMBDIST), size); }).join('');
+  // símbolos de los servicios, agrupados en el centro de cada distrito
+  const rows = (SERV || []).filter(s => s.reg === tkey(Rg.region) && provs.has(s.pk));
+  const groups = {}; rows.forEach(s => { const k = byDist[s.dk] ? s.dk : 'p' + s.pk; (groups[k] = groups[k] || []).push(s); });
+  const S = 11, GAP = 2.5;
+  const marks = Object.entries(groups).map(([k, list]) => {
+    const c = k[0] === 'p' ? provCentroid[k.slice(1)] : path.centroid(byDist[k]); if (!c || isNaN(c[0])) return '';
+    const items = list.flatMap(s => Array(Math.min(s.n, 6)).fill(s.servicio));
+    const cols = Math.min(4, Math.ceil(Math.sqrt(items.length))), rowsN = Math.ceil(items.length / cols);
+    const x0 = c[0] - (cols * (S + GAP) - GAP) / 2, y0 = c[1] - (rowsN * (S + GAP) - GAP) / 2;
+    return items.map((sv, i) => symbolSvg(sv).replace('<svg ', `<svg x="${(x0 + (i % cols) * (S + GAP)).toFixed(1)}" y="${(y0 + Math.floor(i / cols) * (S + GAP)).toFixed(1)}" width="${S}" height="${S}" `)).join('');
+  }).join('');
+  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de servicios">${fills}${provLines}${outline}${labels}${marks}</svg>`;
+}
+
+// ── Página 5: distribución territorial de los servicios ──
+function pageDistribution(R, n){
+  const rows = servRows(R); if (!rows) return '';
+  const map = mapSvg(R);
+  const mapHtml = map ? `<div class="map map-geo">${map}</div>`
+    : (R._tipo === 'Región' && R._mapa ? `<div class="map"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : '');
+  if (R._tipo === 'Distrito'){
+    if (!map) return '';
+    const provRows = (SERV || []).filter(s => s.reg === tkey(R.region) && s.pk === R._pk);
+    const servs = [...new Set(provRows.map(s => s.servicio))];
+    return `<section class="page">${band(R)}<div class="page-body">
+      <div><span class="h2">Ubicación del distrito en la provincia de ${esc(R._prov)}</span></div>
+      ${mapHtml}
+      ${servs.length ? `<div class="leg leg-cols">${servs.map(s => `${symbolSvg(s)}<span>${esc(s)}</span>`).join('')}</div>` : `<p class="muted">No hay servicios MIMP implementados en la provincia.</p>`}
+      <div class="note">El distrito aparece resaltado. Los símbolos muestran los servicios de toda la provincia.</div>
+    </div>${footer(R,n)}</section>`;
+  }
+  if (!rows.length && !map) return '';
+  const byProv = R._tipo === 'Región';
+  const units = {}; const order = [];
+  rows.forEach(s => { const k = (byProv ? s.pk : s.dk) || '-';
+    const known = byProv ? R._region._subs[k] : (R._region._subs[R._pk] || {dists:{}}).dists[k];
+    if (!units[k]){ units[k] = { nombre: (known && known.nombre) || (byProv ? s.prov : s.dist) || 'Sin dato', items: [] }; order.push(k); } units[k].items.push(s); });
+  if (order.length < 2 && !mapHtml) return '';
+  const servs = [...new Set(rows.map(s => s.servicio))];
+  const sym = items => items.flatMap(s => Array(Math.min(s.n, 12)).fill(symbolSvg(s.servicio))).join('');
+  return `<section class="page">${band(R)}<div class="page-body">
+    <div><span class="h2">Distribución de los servicios por ${byProv ? 'provincia' : 'distrito'}</span></div>
+    ${mapHtml}
+    ${order.length ? `<div class="prov-grid">${order.map(k => { const u = units[k]; const tot = u.items.reduce((a,s)=>a+s.n,0);
+      return `<div class="prov"><span>${esc(u.nombre)} <small class="muted">(${tot})</small></span><span class="sym">${sym(u.items)}</span></div>`; }).join('')}</div>` : ''}
+    ${servs.length ? `<div class="leg leg-cols">${servs.map(s => `${symbolSvg(s)}<span>${esc(s)}</span>`).join('')}</div>` : ''}
+  </div>${footer(R,n)}</section>`;
+}
+
+// ── Página 5: UPE ──
+function pageUPE(R, n){
+  if(!has(R.upe_total)) return '';
+  const bars = (title, items, color) => {
+    const list = items.filter(i => has(R[i[1]])); if(!list.length) return '';
+    const max = Math.max(...list.map(i => num(R[i[1]])||0), 1);
+    return `<div class="bars" style="--c:${color}"><h3>${title}</h3>${list.map(([l,k]) => { const v = num(R[k])||0;
+      return `<div class="bar-row"><span>${l}</span><div class="bar-track"><div class="bar-fill" style="width:${(v/max*100).toFixed(1)}%"></div></div><b>${fmtN(v)}</b></div>`; }).join('')}</div>`;
+  };
+  return `<section class="page">${band(R)}<div class="page-body">
+    <div><span class="h2">Unidad de Protección Especial (UPE) ${esc(R.region)}</span></div>${lvlNote(R, ['upe_total'])}
+    <div class="upe-hero"><span class="n">${nTxt(R.upe_total)}</span><p>niñas, niños y adolescentes iniciaron procedimiento bajo alguna de las tipologías de violencia: sexual, física o psicológica.</p></div>
+    ${bars('Tipo de procedimiento', [['Riesgo','upe_riesgo'],['Desprotección','upe_desproteccion']], 'var(--red)')}
+    ${bars('Tipo de violencia, según tabla de valoración de riesgo', [['Sexual','upe_sexual'],['Física','upe_fisica'],['Psicológica','upe_psicologica']], 'var(--violet)')}
+    ${bars('Grupo de edad', [['0 a 5 años','upe_0_5'],['6 a 11 años','upe_6_11'],['12 a 17 años','upe_12_17']], 'var(--amber)')}
+    <div class="note">Nota: los valores por tipo de violencia no se suman porque corresponden a respuestas múltiples.</div>
+    ${srcLine('upe')}
+  </div>${footer(R,n)}</section>`;
+}
+
+function buildPages(R){
+  const out = [pageCover(R)];
+  [pageAuthorities, pageProfile, pageServices, pageDistribution, pageUPE].forEach(fn => { const h = fn(R, out.length+1); if(h) out.push(h); });
+  return out.join('');
+}
+
+// ── Vista ──
+const curRegion = () => REGIONES.find(r => slug(r.region) === $('region').value) || REGIONES[0];
+function current(){
+  const Rg = curRegion(); if (!Rg) return null;
+  const pk = Rg._subs[$('prov').value] ? $('prov').value : '';
+  const dk = pk && Rg._subs[pk].dists[$('dist').value] ? $('dist').value : '';
+  return buildView(Rg, pk, dk);
+}
+function fillProv(sel){
+  const Rg = curRegion(); const p = $('prov');
+  const subs = Rg ? Rg._subOrder : [];
+  p.innerHTML = `<option value="">${subs.length ? 'Toda la región' : 'Sin datos provinciales'}</option>` + subs.map(pk => `<option value="${esc(pk)}">${esc(Rg._subs[pk].nombre)}</option>`).join('');
+  p.disabled = !subs.length; p.value = sel && Rg && Rg._subs[sel] ? sel : '';
+}
+function fillDist(sel){
+  const Rg = curRegion(); const d = $('dist'); const P = Rg && Rg._subs[$('prov').value];
+  const list = P ? P.distOrder : [];
+  d.innerHTML = `<option value="">${!P ? 'Distrito' : list.length ? 'Toda la provincia' : 'Sin datos distritales'}</option>` + list.map(dk => `<option value="${esc(dk)}">${esc(P.dists[dk].nombre)}</option>`).join('');
+  d.disabled = !list.length; d.value = sel && P && P.dists[sel] ? sel : '';
+}
+async function render(){
+  const R = current(); if(!R) return;
+  await resolveImages(R._region); R._portada = R._region._portada; R._mapa = R._region._mapa;
+  $('viewer').innerHTML = buildPages(R);
+  history.replaceState(null,'','#'+[$('region').value, $('prov').value, $('dist').value].filter(Boolean).map(encodeURIComponent).join('/'));
+}
+
+// ── PDF ──
+const fileName = R => 'Resumen_Estadistico_' + [R.region, R._prov, R._tipo==='Distrito' ? R._nombre : ''].filter(Boolean).map(s => norm(s).replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').replace(/(^|_)([a-z])/g,(m,a,b)=>a+b.toUpperCase())).join('_') + '.pdf';
+function waitImages(root){
+  return Promise.all([...root.querySelectorAll('img')].map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; })));
+}
+async function pagesToPdf(root){
+  await document.fonts.ready; await waitImages(root);
+  const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:'mm', format:'a4', compress:true});
+  const pages = [...root.querySelectorAll('.page')];
+  for (let i=0;i<pages.length;i++){
+    const canvas = await html2canvas(pages[i], {scale:2, useCORS:true, backgroundColor:'#ffffff', logging:false});
+    if(i) pdf.addPage();
+    pdf.addImage(canvas.toDataURL('image/jpeg', .92), 'JPEG', 0, 0, 210, 297);
+  }
+  return pdf;
+}
+function saveBlob(blob, name){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
+function busy(on){ ['btnPdf','btnZip','btnPrint','region'].forEach(id => $(id).disabled = on); if (on){ $('prov').disabled = $('dist').disabled = true; } else { fillProv($('prov').value); fillDist($('dist').value); } }
+function progress(p){ $('progress').style.width = p==null ? '0' : (p*100).toFixed(1)+'%'; }
+
+async function downloadOne(){
+  const R = current(); busy(true); status('Generando PDF de ' + fullName(R) + '…');
+  try{ const pdf = await pagesToPdf($('viewer')); pdf.save(fileName(R)); status(''); }
+  catch(e){ status('No se pudo generar el PDF: ' + e.message, true); }
+  busy(false);
+}
+async function downloadAll(){
+  busy(true); const zip = new JSZip(); const off = $('offscreen');
+  try{
+    for (let i=0;i<REGIONES.length;i++){
+      const R = REGIONES[i]; status(`Generando ${i+1} de ${REGIONES.length}: ${R.region}…`); progress(i/REGIONES.length);
+      await resolveImages(R); const V = buildView(R); V._portada = R._portada; V._mapa = R._mapa; off.innerHTML = buildPages(V);
+      const pdf = await pagesToPdf(off);
+      zip.file(fileName(V), pdf.output('arraybuffer'));
+    }
+    status('Comprimiendo archivos…'); progress(1);
+    saveBlob(await zip.generateAsync({type:'blob'}), 'Resumenes_Estadisticos_Regionales.zip');
+    status('');
+  }catch(e){ status('No se pudo generar el ZIP: ' + e.message, true); }
+  off.innerHTML = ''; progress(null); busy(false);
+}
+
+// ── Inicio ──
+(async function init(){
+  $('region').addEventListener('change', () => { fillProv(); fillDist(); render(); });
+  $('prov').addEventListener('change', () => { fillDist(); render(); });
+  $('dist').addEventListener('change', render);
+  $('btnPdf').addEventListener('click', downloadOne);
+  $('btnZip').addEventListener('click', downloadAll);
+  $('btnPrint').addEventListener('click', () => window.print());
+  status('Cargando datos del Google Sheet…');
+  try{
+    const [failed] = await Promise.all([loadData(), loadMap()]);
+    if(!REGIONES.length) throw new Error('ninguna hoja respondió con regiones');
+    const sel = $('region');
+    sel.innerHTML = REGIONES.map(r => `<option value="${slug(r.region)}">${esc(r.region)}</option>`).join('');
+    const [hr, hp, hd] = location.hash.slice(1).split('/').map(decodeURIComponent);
+    if (REGIONES.some(r => slug(r.region)===hr)) sel.value = hr;
+    busy(false); fillProv(hp); fillDist(hd); await render();
+    status(failed.length ? 'No se pudo leer la hoja: ' + failed.join(', ') + '. El resumen se muestra sin esos datos.' : '', failed.length > 0);
+  }catch(e){ status('No se pudieron cargar los datos del Sheet (' + e.message + '). Revisa que las hojas estén publicadas como TSV.', true); }
 })();
 </script>
 </body>
