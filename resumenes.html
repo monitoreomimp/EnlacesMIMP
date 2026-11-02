@@ -10,6 +10,8 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
 <style>
 :root{
   --red:#C8102E; --red-dk:#A50D25; --violet:#3B2E7E; --violet-2:#7A45E0; --amber:#F2A900;
@@ -135,6 +137,8 @@ label.btn{display:inline-flex;align-items:center}
 .svc-counts b{font-weight:800}
 .map{height:100mm;display:flex;align-items:center;justify-content:center}
 .map img{max-width:100%;max-height:100%;display:block}
+.map-geo{height:auto}
+.map-geo > svg{width:100%;height:auto;display:block}
 .prov-grid{display:grid;grid-template-columns:1fr 1fr;gap:2.5mm 8mm;align-content:start}
 .prov{display:flex;justify-content:space-between;gap:4mm;font-size:9.5pt;border-bottom:1px solid var(--line);padding-bottom:1.6mm}
 .prov span:first-child{font-weight:600}
@@ -223,7 +227,8 @@ const BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJC
 const CONFIG = {
   CARPETA_IMAGENES: 'imagenes/',
   CARPETA_PORTADAS: 'Fotos Regiones/',
-  CARPETA_ICONOS: 'Iconos/',   // archivo = nombre de la región tal como está en el Sheet (ej. Apurímac.png)
+  CARPETA_ICONOS: 'Iconos/',
+  MAPA: 'mapas/peru_distritos.json',   // límites distritales (TopoJSON con IDDIST, IDPROV, NOMBDIST, NOMBPROV)   // archivo = nombre de la región tal como está en el Sheet (ej. Apurímac.png)
   HOJAS: {
     gobernador: BASE + '353378163',
     poblacion:  BASE + '1109551559',
@@ -752,24 +757,108 @@ function pageServices(R, n){
   </div>${footer(R,n)}</section>`;
 }
 
+// ── Mapa de servicios (generado a partir de los límites distritales) ──
+let TOPO = null, GEOMS = [], MAP_ERR = '';
+const loadScript = src => new Promise((ok, ko) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => ko(new Error(src)); document.head.appendChild(s); });
+async function loadMap(){
+  try{
+    // librerías: si el CDN principal falla, se intenta con otro
+    if (!window.d3) await loadScript('https://cdn.jsdelivr.net/npm/d3@7.8.5/dist/d3.min.js').catch(() => {});
+    if (!window.topojson) await loadScript('https://cdn.jsdelivr.net/npm/topojson-client@3.1.0/dist/topojson-client.min.js').catch(() => {});
+    if (!window.d3 || !window.topojson) throw new Error('no cargaron las librerías del mapa (d3 / topojson)');
+    // archivo de límites: se prueba la ruta configurada y variantes comunes
+    const file = CONFIG.MAPA.split('/').pop();
+    const tries = [...new Set([CONFIG.MAPA, 'Mapas/' + file, file])];
+    let lastStatus = '';
+    for (const url of tries){
+      try{
+        const r = await fetch(url, { cache: 'no-store' });
+        if (!r.ok){ lastStatus = `${url} (HTTP ${r.status})`; continue; }
+        TOPO = await r.json(); break;
+      }catch(e){ lastStatus = `${url} (${e.message})`; }
+    }
+    if (!TOPO) throw new Error('no se encontró el archivo de límites: ' + lastStatus);
+    const key = Object.keys(TOPO.objects || {})[0];
+    if (!key) throw new Error('el archivo de límites no tiene el formato esperado');
+    GEOMS = TOPO.objects[key].geometries;
+  }catch(e){ TOPO = null; MAP_ERR = e.message; console.warn('Mapa:', e); }
+}
+const titleCase = s => (s||'').toLowerCase().replace(/(^|[\s(-])([a-záéíóúñü])/g, (m,a,b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y|El)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
+function mapSvg(R){
+  if (!TOPO) return '';
+  const Rg = R._region;
+  const provs = new Set(R._tipo === 'Región' ? Rg._subOrder.filter(k => /^\d{4}$/.test(k)) : [R._pk]);
+  const geoms = GEOMS.filter(g => provs.has(String(g.properties.IDPROV)));
+  if (!geoms.length) return '';
+  const W = 800, H = 470, coll = { type:'GeometryCollection', geometries: geoms };
+  const fc = topojson.feature(TOPO, coll);
+  const proj = d3.geoMercator().fitExtent([[12,12],[W-12,H-12]], fc);
+  const path = d3.geoPath(proj);
+  const byDist = {}; fc.features.forEach(f => byDist[String(f.properties.IDDIST)] = f);
+  const regionView = R._tipo === 'Región';
+  // fondo: distritos
+  const fills = fc.features.map(f => {
+    const hi = R._tipo === 'Distrito' && String(f.properties.IDDIST) === R._dk;
+    return `<path d="${path(f)}" fill="${hi ? '#F4C9CF' : '#E7E9ED'}" stroke="${regionView ? '#F1F2F5' : '#FFFFFF'}" stroke-width="${regionView ? .6 : 1.2}"/>`;
+  }).join('');
+  const provLines = regionView ? `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a !== b && a.properties.IDPROV !== b.properties.IDPROV))}" fill="none" stroke="#FFFFFF" stroke-width="2.6"/>` : '';
+  const outline = `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a === b))}" fill="none" stroke="#C3C8D0" stroke-width="1.2"/>`;
+  // etiquetas: provincias (vista regional) o distritos
+  const label = (x, y, txt, size) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round">${esc(txt)}</text><text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#7A8392">${esc(txt)}</text>`;
+  const provCentroid = {};
+  [...provs].forEach(pk => { const g = geoms.filter(x => String(x.properties.IDPROV) === pk); if (g.length) provCentroid[pk] = path.centroid(topojson.merge(TOPO, g)); });
+  const labels = regionView
+    ? [...provs].filter(pk => provCentroid[pk]).map(pk => { const g = geoms.find(x => String(x.properties.IDPROV) === pk);
+        const name = (Rg._subs[pk] && Rg._subs[pk].nombre) || g.properties.NOMBPROV; const [x,y] = provCentroid[pk]; return label(x, y + 22, titleCase(name), 14); }).join('')
+    : fc.features.map(f => { const [x,y] = path.centroid(f); const size = fc.features.length > 30 ? 8 : 10;
+        const known = (Rg._subs[R._pk] || {dists:{}}).dists[String(f.properties.IDDIST)];
+        return label(x, y + 14, titleCase((known && known.nombre) || f.properties.NOMBDIST), size); }).join('');
+  // símbolos de los servicios, agrupados en el centro de cada distrito
+  const rows = (SERV || []).filter(s => s.reg === tkey(Rg.region) && provs.has(s.pk));
+  const groups = {}; rows.forEach(s => { const k = byDist[s.dk] ? s.dk : 'p' + s.pk; (groups[k] = groups[k] || []).push(s); });
+  const S = 11, GAP = 2.5;
+  const marks = Object.entries(groups).map(([k, list]) => {
+    const c = k[0] === 'p' ? provCentroid[k.slice(1)] : path.centroid(byDist[k]); if (!c || isNaN(c[0])) return '';
+    const items = list.flatMap(s => Array(Math.min(s.n, 6)).fill(s.servicio));
+    const cols = Math.min(4, Math.ceil(Math.sqrt(items.length))), rowsN = Math.ceil(items.length / cols);
+    const x0 = c[0] - (cols * (S + GAP) - GAP) / 2, y0 = c[1] - (rowsN * (S + GAP) - GAP) / 2;
+    return items.map((sv, i) => symbolSvg(sv).replace('<svg ', `<svg x="${(x0 + (i % cols) * (S + GAP)).toFixed(1)}" y="${(y0 + Math.floor(i / cols) * (S + GAP)).toFixed(1)}" width="${S}" height="${S}" `)).join('');
+  }).join('');
+  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de servicios">${fills}${provLines}${outline}${labels}${marks}</svg>`;
+}
+
 // ── Página 5: distribución territorial de los servicios ──
 function pageDistribution(R, n){
-  if (R._tipo === 'Distrito') return '';
-  const rows = servRows(R); if (!rows || !rows.length) return '';
+  const rows = servRows(R); if (!rows) return '';
+  const map = mapSvg(R);
+  const mapHtml = map ? `<div class="map map-geo">${map}</div>`
+    : (R._tipo === 'Región' && R._mapa ? `<div class="map"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : '');
+  if (R._tipo === 'Distrito'){
+    if (!map) return '';
+    const provRows = (SERV || []).filter(s => s.reg === tkey(R.region) && s.pk === R._pk);
+    const servs = [...new Set(provRows.map(s => s.servicio))];
+    return `<section class="page">${band(R)}<div class="page-body">
+      <div><span class="h2">Ubicación del distrito en la provincia de ${esc(R._prov)}</span></div>
+      ${mapHtml}
+      ${servs.length ? `<div class="leg leg-cols">${servs.map(s => `${symbolSvg(s)}<span>${esc(s)}</span>`).join('')}</div>` : `<p class="muted">No hay servicios MIMP implementados en la provincia.</p>`}
+      <div class="note">El distrito aparece resaltado. Los símbolos muestran los servicios de toda la provincia.</div>
+    </div>${footer(R,n)}</section>`;
+  }
+  if (!rows.length && !map) return '';
   const byProv = R._tipo === 'Región';
   const units = {}; const order = [];
   rows.forEach(s => { const k = (byProv ? s.pk : s.dk) || '-';
     const known = byProv ? R._region._subs[k] : (R._region._subs[R._pk] || {dists:{}}).dists[k];
     if (!units[k]){ units[k] = { nombre: (known && known.nombre) || (byProv ? s.prov : s.dist) || 'Sin dato', items: [] }; order.push(k); } units[k].items.push(s); });
-  if (order.length < 2 && !R._mapa) return '';
+  if (order.length < 2 && !mapHtml) return '';
   const servs = [...new Set(rows.map(s => s.servicio))];
   const sym = items => items.flatMap(s => Array(Math.min(s.n, 12)).fill(symbolSvg(s.servicio))).join('');
   return `<section class="page">${band(R)}<div class="page-body">
     <div><span class="h2">Distribución de los servicios por ${byProv ? 'provincia' : 'distrito'}</span></div>
-    ${R._tipo === 'Región' && R._mapa ? `<div class="map"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : ''}
-    <div class="prov-grid">${order.map(k => { const u = units[k]; const tot = u.items.reduce((a,s)=>a+s.n,0);
-      return `<div class="prov"><span>${esc(u.nombre)} <small class="muted">(${tot})</small></span><span class="sym">${sym(u.items)}</span></div>`; }).join('')}</div>
-    <div class="leg leg-cols">${servs.map(s => `${symbolSvg(s)}<span>${esc(s)}</span>`).join('')}</div>
+    ${mapHtml}
+    ${order.length ? `<div class="prov-grid">${order.map(k => { const u = units[k]; const tot = u.items.reduce((a,s)=>a+s.n,0);
+      return `<div class="prov"><span>${esc(u.nombre)} <small class="muted">(${tot})</small></span><span class="sym">${sym(u.items)}</span></div>`; }).join('')}</div>` : ''}
+    ${servs.length ? `<div class="leg leg-cols">${servs.map(s => `${symbolSvg(s)}<span>${esc(s)}</span>`).join('')}</div>` : ''}
   </div>${footer(R,n)}</section>`;
 }
 
@@ -878,14 +967,17 @@ async function downloadAll(){
   $('btnPrint').addEventListener('click', () => window.print());
   status('Cargando datos del Google Sheet…');
   try{
-    const failed = await loadData();
+    const [failed] = await Promise.all([loadData(), loadMap()]);
     if(!REGIONES.length) throw new Error('ninguna hoja respondió con regiones');
     const sel = $('region');
     sel.innerHTML = REGIONES.map(r => `<option value="${slug(r.region)}">${esc(r.region)}</option>`).join('');
     const [hr, hp, hd] = location.hash.slice(1).split('/').map(decodeURIComponent);
     if (REGIONES.some(r => slug(r.region)===hr)) sel.value = hr;
     busy(false); fillProv(hp); fillDist(hd); await render();
-    status(failed.length ? 'No se pudo leer la hoja: ' + failed.join(', ') + '. El resumen se muestra sin esos datos.' : '', failed.length > 0);
+    const msgs = [];
+    if (failed.length) msgs.push('No se pudo leer la hoja: ' + failed.join(', ') + '. El resumen se muestra sin esos datos.');
+    if (MAP_ERR) msgs.push('Mapa: ' + MAP_ERR + '.');
+    status(msgs.join(' '), msgs.length > 0);
   }catch(e){ status('No se pudieron cargar los datos del Sheet (' + e.message + '). Revisa que las hojas estén publicadas como TSV.', true); }
 })();
 </script>
