@@ -228,6 +228,7 @@ const CONFIG = {
     gobernador: BASE + '353378163',
     poblacion:  BASE + '1109551559',
     servicios:  BASE + '806903940',
+    indicadores: BASE + '1665840861',
     iconos:     BASE + '395452209',  // hoja Iconos: Indicador | Icono
     serv_impl:  BASE + '2038705844'  // hoja Serv_impl: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Recuento
   },
@@ -244,6 +245,13 @@ const CONFIG = {
       pob_0_5:'Primera Infancia', pob_6_11:'Infancia', pob_12_17:'Adolescente', pob_18_29:'Juventud', pob_30_59:'Adulto', pob_60_mas:'Adultos mayores',
       pct_mujer:'Mujer %', pct_hombre:'Hombre %', pct_discapacidad:'Discapacidad %', pct_0_5:'Prim. Infancia %', pct_6_11:'Infancia %',
       pct_12_17:'Adolescente %', pct_18_29:'Juventud %', pct_30_59:'Adulto %', pct_60_mas:'Adulto Mayor %'
+    },
+    // Esta hoja tiene varias filas de encabezado, por eso se indica la COLUMNA (letra)
+    indicadores: {
+      trab_inf_mujer:'B', trab_inf_hombre:'C', jefas_hogar:'D', analf_mujer:'E', analf_hombre:'F',
+      alc_prov_m:'G', alc_prov_h:'H', alc_dist_m:'I', alc_dist_h:'J',
+      violencia_mujer:'K', viol_psicologica:'L', viol_fisica:'M', viol_sexual:'N', embarazo_adol:'O',
+      feminicidio:'P', nna_riesgo:'Q', am_discriminacion:'R', pcd_discriminacion:'S'
     },
     servicios: {
       periodo:'periodo',
@@ -273,6 +281,8 @@ const CONFIG = {
     { servicio:'centro emergencia mujer y familia - 24 horas', campo:'cem24_at' },
     { servicio:'hogares de refugio temporal', campo:'hrt_at', etiqueta:'personas atendidas' }
   ],
+  // Conteos que, si la celda está vacía, se leen como 0
+  CERO_SI_VACIO: ['feminicidio','alc_prov_m','alc_prov_h','alc_dist_m','alc_dist_h'],
   FUENTES: {
     autoridades: 'Infogob - Jurado Nacional de Elecciones',
     poblacion: 'INEI - Censo 2025. Elaborado: OGMEPGD',
@@ -286,7 +296,16 @@ const slug = s => norm(s).replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');
 const esc = s => (s??'').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const has = v => v !== undefined && v !== null && String(v).trim() !== '';
 
-function num(v){ if(!has(v)) return null; const d = String(v).replace(/[^\d-]/g,''); return d==='' ? null : parseInt(d,10); }
+function num(v){
+  if(!has(v)) return null;
+  let s = String(v).replace(/[\s\u00a0%]/g,'');
+  if (/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s)) s = s.replace(/,/g,'');          // 1,234,567.8
+  else if (/^-?\d{1,3}(\.\d{3})+,\d+$/.test(s)) s = s.replace(/\./g,'').replace(',','.'); // 1.234.567,8
+  else if ((s.match(/\./g)||[]).length > 1) { const i = s.lastIndexOf('.'); s = s.slice(0,i).replace(/\./g,'') + s.slice(i); } // 51.619.981
+  else s = s.replace(',', '.');
+  const n = parseFloat(s.replace(/[^\d.-]/g,''));
+  return isNaN(n) ? null : Math.round(n);
+}
 function fmtN(n){ return n==null ? '—' : n.toLocaleString('en-US').replace(/,/g,'\u2009'); }
 function nTxt(v){ const n = num(v); return n==null ? (has(v)? esc(v) : '—') : fmtN(n); }
 function fmtP(v){
@@ -365,25 +384,47 @@ function symbolSvg(name){
 const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
 let SERV = [];
 
+// Lee CSV o TSV y devuelve filas de celdas
+function parseSheet(raw){
+  const lines = raw.replace(/\r\n?/g,'\n').split('\n');
+  const tsv = lines.some(l => l.includes('\t'));
+  const split = l => tsv ? l.split('\t') : (l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || []).slice(0,-1).map(x => x.replace(/,$/,'').replace(/^"|"$/g,'').replace(/""/g,'"'));
+  return lines.map(l => split(l).map(v => (v||'').trim()));
+}
+// Fila de encabezado: la primera que tenga "Departamento" o "Región"
+function headerRow(rows){
+  for (let i = 0; i < Math.min(rows.length, 6); i++){
+    const j = rows[i].findIndex(c => ['departamento','region'].includes(norm(c)));
+    if (j >= 0) return { i, reg: j };
+  }
+  return { i: 0, reg: 0 };
+}
+const colIdx = (head, ref) => /^[A-Z]{1,2}$/.test(ref) ? ref.split('').reduce((a,ch) => a*26 + ch.charCodeAt(0) - 64, 0) - 1 : head.indexOf(norm(ref));
+const ubigeo = v => { const d = String(v||'').replace(/\D/g,''); return d ? d.padStart(d.length % 2 ? d.length + 1 : d.length, '0') : ''; };
+// Clave de provincia y distrito: por ubigeo si existe; si no, por nombre
+function terrKeys(ub, prov, dist){
+  if (ub.length >= 6) return { pk: ub.slice(0,4), dk: has(dist) ? ub.slice(0,6) : '' };
+  if (ub.length === 4) return { pk: ub, dk: '' };
+  return { pk: tkey(prov) || (has(dist) ? '-' : ''), dk: tkey(dist) };
+}
+let FUENTES_AUTO = {};
+
 async function loadData(){
   const names = Object.keys(CONFIG.HOJAS).filter(k => !['iconos','serv_impl'].includes(k) && CONFIG.HOJAS[k]);
   const servP = CONFIG.HOJAS.serv_impl ? fetchText(CONFIG.HOJAS.serv_impl).then(raw => {
-    const lines = raw.replace(/\r\n?/g,'\n').split('\n').filter(l => l.replace(/[\t,]/g,'').trim());
-    const sep = lines[0].includes('\t') ? '\t' : ',';
-    const split = l => sep === '\t' ? l.split('\t') : (l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || []).map(x => x.replace(/,$/,'').replace(/^"|"$/g,'').replace(/""/g,'"'));
-    const head = split(lines[0]).map(norm);
+    const rows = parseSheet(raw); const h = headerRow(rows); const head = rows[h.i].map(norm);
     const col = n => head.indexOf(n);
-    const [iR,iP,iD,iC,iM,iN,iK] = [col('departamento'),col('provincia'),col('distrito'),col('centro'),col('modalidad'),col('recuento'),col('categoria')];
-    SERV = lines.slice(1).map(split).map(c => {
-      const centro = (c[iC]||'').trim(), mod = iM >= 0 ? (c[iM]||'').trim() : '';
-      return { reg:tkey(c[iR]), prov:(c[iP]||'').trim(), dist:(c[iD]||'').trim(), servicio: mod ? `${centro} - ${mod}` : centro,
-               cat: iK >= 0 ? (c[iK]||'').trim() : '', n: num(c[iN]) ?? 1 };
+    const [iU,iP,iD,iC,iM,iN,iK] = [col('ubigeo'),col('provincia'),col('distrito'),col('centro'),col('modalidad'),col('recuento'),col('categoria')];
+    SERV = rows.slice(h.i+1).map(c => {
+      const centro = c[iC]||'', mod = iM >= 0 ? (c[iM]||'') : '';
+      const prov = c[iP]||'', dist = c[iD]||'';
+      return { reg:tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
+               servicio: mod ? `${centro} - ${mod}` : centro, cat: iK >= 0 ? (c[iK]||'') : '', n: num(c[iN]) ?? 1 };
     }).filter(s => s.reg && s.servicio);
   }).catch(() => { SERV = null; }) : Promise.resolve();
   const iconsP = CONFIG.HOJAS.iconos ? fetchText(CONFIG.HOJAS.iconos).then(raw => {
     ICONS = {};
-    raw.replace(/\r\n?/g,'\n').split('\n').slice(1).forEach(l => {
-      const [k, f] = l.split('\t').map(v => (v||'').trim().replace(/^"|"$/g,''));
+    parseSheet(raw).slice(1).forEach(([k, f]) => {
       if (has(k) && has(f)) ICONS[norm(k)] = /^https?:\/\//i.test(f) ? [f] : [...new Set([f.normalize('NFC'), f.normalize('NFD')])].map(v => pathUrl(CONFIG.CARPETA_ICONOS, v));
     });
   }).catch(() => {}) : Promise.resolve();
@@ -391,37 +432,42 @@ async function loadData(){
   const failed = raws.filter(x => x[1] === null).map(x => x[0]);
   const byKey = {}; const order = [];
   const regionOf = name => {
-    const key = norm(name);
+    const key = tkey(name);
     if (!byKey[key]){ byKey[key] = { region: name, _subs: {}, _subOrder: [] }; order.push(key); }
     const R = byKey[key];
     // Nombre para mostrar: se prefiere el que tiene tildes y mayúsculas/minúsculas
-    if (name !== name.toUpperCase() && R.region === R.region.toUpperCase()) R.region = name;
+    if ((name !== name.toUpperCase() && R.region === R.region.toUpperCase()) || (/[áéíóúñ]/i.test(name) && !/[áéíóúñ]/i.test(R.region))) R.region = name;
     return R;
   };
+  FUENTES_AUTO = {};
   raws.forEach(([hoja, raw]) => {
     if (!raw) return;
-    const lines = raw.replace(/\r\n?/g,'\n').split('\n').filter(l => l.replace(/\t/g,'').trim());
-    if (!lines.length) return;
-    const head = lines[0].split('\t').map(norm);
-    const iProv = head.indexOf('provincia'), iDist = head.indexOf('distrito');
-    const map = CONFIG.CAMPOS[hoja] || {};
-    lines.slice(1).forEach(l => {
-      const c = l.split('\t').map(v => (v||'').trim().replace(/^"|"$/g,''));
-      if (!has(c[0])) return;
-      const R = regionOf(c[0]);
+    const rows = parseSheet(raw); const h = headerRow(rows);
+    const head = rows[h.i].map(norm);
+    const iProv = head.indexOf('provincia'), iDist = head.indexOf('distrito'), iUb = head.indexOf('ubigeo');
+    const map = Object.entries(CONFIG.CAMPOS[hoja] || {}).map(([code, ref]) => [code, colIdx(head, ref)]).filter(([,i]) => i >= 0);
+    // Fuente tomada del título de la columna, lo que está entre paréntesis: "Trabajo infantil (ENAHO, 2025)"
+    if (h.i > 0) map.forEach(([code, i]) => {
+      for (let j = i; j >= 0; j--){ const title = rows[0][j]; if (has(title)) { const m = title.match(/\(([^()]*)\)\s*$/); if (m) FUENTES_AUTO[code] = m[1]; break; } }
+    });
+    rows.slice(h.i+1).forEach(c => {
+      if (!has(c[h.reg])) return;
+      const R = regionOf(c[h.reg]);
       const prov = iProv >= 0 ? c[iProv] : '', dist = iDist >= 0 ? c[iDist] : '';
+      const { pk, dk } = terrKeys(iUb >= 0 ? ubigeo(c[iUb]) : '', prov, dist);
       let target = R;
-      if (has(prov) || has(dist)){
-        const pk = tkey(prov) || '-';
+      if (pk){
         if (!R._subs[pk]){ R._subs[pk] = { nombre: prov || 'Sin provincia', rec: {}, dists: {}, distOrder: [] }; R._subOrder.push(pk); }
         const P = R._subs[pk]; target = P.rec;
-        if (has(dist)){
-          const dk = tkey(dist);
+        if (dk){
           if (!P.dists[dk]){ P.dists[dk] = { nombre: dist, rec: {} }; P.distOrder.push(dk); }
           target = P.dists[dk].rec;
         }
       }
-      Object.entries(map).forEach(([code, header]) => { const i = head.indexOf(norm(header)); if (i >= 0 && has(c[i])) target[code] = c[i]; });
+      map.forEach(([code, i]) => {
+        if (has(c[i])) target[code] = c[i];
+        else if (CONFIG.CERO_SI_VACIO.includes(code) && !(code in target)) target[code] = '0';
+      });
     });
   });
   // Si falta el total de un nivel, se suma desde el nivel inferior
@@ -435,15 +481,20 @@ async function loadData(){
     R._nProv = R._subOrder.filter(pk => pk !== '-').length;
     R._nDist = R._subOrder.reduce((a,pk) => a + R._subs[pk].distOrder.length, 0);
     R._nDistOf = Object.fromEntries(R._subOrder.map(pk => [pk, R._subs[pk].distOrder.length]));
+    // Alcaldesas = mujeres alcaldesas provinciales + distritales
+    const alc = ['alc_prov_m','alc_prov_h','alc_dist_m','alc_dist_h'].map(k => num(R[k]));
+    if (alc.some(v => v != null)){
+      R.alcaldesas = String((alc[0]||0) + (alc[2]||0));
+      R._alc_detalle = `${alc[0]||0} provincial${(alc[0]||0)===1?'':'es'} y ${alc[2]||0} distrital${(alc[2]||0)===1?'':'es'}, de ${alc.reduce((a,v)=>a+(v||0),0)} alcaldías`;
+    }
   });
   await iconsP; await servP;
   // Territorios que solo aparecen en Serv_impl se agregan a los filtros (sin datos de población)
   (SERV || []).forEach(s => {
-    const R = byKey[s.reg] || byKey[Object.keys(byKey).find(k => tkey(k) === s.reg)]; if (!R || !has(s.prov)) return;
-    const pk = tkey(s.prov);
-    if (!R._subs[pk]){ R._subs[pk] = { nombre: s.prov, rec: {}, dists: {}, distOrder: [], soloServ: true }; R._subOrder.push(pk); }
-    const P = R._subs[pk], dk = tkey(s.dist);
-    if (dk && !P.dists[dk]){ P.dists[dk] = { nombre: s.dist, rec: {}, soloServ: true }; P.distOrder.push(dk); }
+    const R = byKey[s.reg]; if (!R || !s.pk) return;
+    if (!R._subs[s.pk]){ R._subs[s.pk] = { nombre: s.prov, rec: {}, dists: {}, distOrder: [], soloServ: true }; R._subOrder.push(s.pk); }
+    const P = R._subs[s.pk];
+    if (s.dk && !P.dists[s.dk]){ P.dists[s.dk] = { nombre: s.dist, rec: {}, soloServ: true }; P.distOrder.push(s.dk); }
   });
   assignSymbols([...new Set((SERV || []).map(s => s.servicio))]);
   NACIONAL = byKey['nacional'] || {};
@@ -479,7 +530,8 @@ function lvlNote(R, fields){
   if (!isSub(R) || fields.some(f => R._local.has(f))) return '';
   return `<div class="lvl-note">Información disponible solo a nivel regional (${esc(R.region)})</div>`;
 }
-const fuente = k => CONFIG.FUENTES[k] || '';
+const FUENTE_DE = { trabajo_infantil:'trab_inf_mujer', analfabetismo:'analf_mujer', alcaldesas:'alc_prov_m' };
+const fuente = k => CONFIG.FUENTES[k] || FUENTES_AUTO[k] || FUENTES_AUTO[FUENTE_DE[k]] || '';
 // Íconos: el nombre de la columna Indicador de la hoja Iconos
 const icon = (name, cls='ic') => { const u = ICONS[norm(name)]; if (!u) return '';
   return `<img class="${cls}" src="${u[0]}" data-alt="${u[1]||''}" alt="" onerror="if(this.dataset.alt){this.src=this.dataset.alt;this.dataset.alt=''}else{this.remove()}">`; };
@@ -613,7 +665,7 @@ function pageProfile(R, n){
   const pair = (lbl, m, h, key, ic) => (has(R[m])||has(R[h])) ? `<div class="ind">${withIcon(ic, `
       <div class="row">Mujer: <b>${fmtP(R[m])}</b></div><div class="row">Hombre: <b>${fmtP(R[h])}</b></div>
       <div class="lbl">${lbl}</div>${srcLine(key)}`)}</div>` : '';
-  const single = (key, lbl, isN, ic) => has(R[key]) ? `<div class="ind">${withIcon(ic, `<div class="k">${isN?nTxt(R[key]):fmtP(R[key])}</div><div class="lbl">${lbl}</div>${srcLine(key)}`)}</div>` : '';
+  const single = (key, lbl, isN, ic, extra) => has(R[key]) ? `<div class="ind">${withIcon(ic, `<div class="k">${isN?nTxt(R[key]):fmtP(R[key])}</div><div class="lbl">${lbl}</div>${extra?`<div class="row" style="font-size:8pt">${esc(extra)}</div>`:''}${srcLine(key)}`)}</div>` : '';
   return `<section class="page">${band(R)}<div class="page-body">
     <div class="title-c"><h2>Perfil territorial</h2>
       ${territorio(R)}</div>
@@ -628,7 +680,7 @@ function pageProfile(R, n){
           ${pair('Trabajo infantil','trab_inf_mujer','trab_inf_hombre','trabajo_infantil','Trabajo infantil')}
           ${single('jefas_hogar','Mujeres jefas de hogar',false,'Mujeres jefas de hogar')}
           ${pair('Analfabetismo*','analf_mujer','analf_hombre','analfabetismo','Analfabetismo')}
-          ${single('alcaldesas','Mujeres en cargos políticos (alcaldesas)', true, 'Alcaldesas')}
+          ${single('alcaldesas','Mujeres en cargos políticos (alcaldesas)', true, 'Alcaldesas', R._alc_detalle)}
           ${has(R.actividades) ? `<div class="ind" style="grid-column:1/-1">${withIcon('Actividades económicas', `<div class="k">${esc(R.actividades)}</div><div class="lbl">Principales actividades económicas</div>`)}</div>`:''}
         </div>
         ${has(R.analf_mujer)||has(R.analf_hombre) ? '<div class="note">(*) Porcentaje calculado respecto al total poblacional de su mismo sexo en cada región. Comprende residentes de 15 años a más.</div>' : ''}` : ''}
@@ -636,7 +688,7 @@ function pageProfile(R, n){
       <div class="col">
         ${prob.length ? `<div><span class="h2">Problemática social vinculada al sector</span></div>${lvlNote(R, prob.map(p=>p[0]))}
         <div class="prob-grid">${prob.map(([k,l,nac,t,ic]) => `<div class="prob">${withIcon(ic, `<div class="k">${t==='n'?nTxt(R[k]):fmtP(R[k])}</div>
-          <div class="lbl">${l}</div>${nac && has(NACIONAL[k]) ? `<div class="nac">Nacional: ${fmtP(NACIONAL[k])}</div>`:''}${srcLine(k)}`)}</div>`).join('')}</div>
+          <div class="lbl">${l}</div>${k==='violencia_mujer' && [R.viol_psicologica,R.viol_fisica,R.viol_sexual].some(has) ? `<div class="src">${[['Psicológica',R.viol_psicologica],['Física',R.viol_fisica],['Sexual',R.viol_sexual]].filter(x=>has(x[1])).map(([a,b])=>`${a} ${fmtP(b)}`).join(' · ')}</div>`:''}${nac && has(NACIONAL[k]) ? `<div class="nac">Nacional: ${fmtP(NACIONAL[k])}</div>`:''}${srcLine(k)}`)}</div>`).join('')}</div>
         <div class="note">(**) Violencia familiar contra la mujer de 15 a 49 años de edad, ejercida alguna vez por el esposo o compañero.</div>` : ''}
         ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>${lvlNote(R, ['demuna','juguemos','ponte_modo_ninez','oredis','ciam','beneficencias'])}
         ${svc.map(([t,c,items]) => `<div class="svc-group" style="--c:${c}"><div class="svc-head">${icon(ICON_SVC[t],'ic-h')}${t}</div>
@@ -651,7 +703,7 @@ function pageProfile(R, n){
 function servRows(R){
   if (!SERV) return null;
   const rk = tkey(R.region);
-  return SERV.filter(s => s.reg === rk && (!R._pk || tkey(s.prov) === R._pk) && (!R._dk || tkey(s.dist) === R._dk));
+  return SERV.filter(s => s.reg === rk && (!R._pk || s.pk === R._pk) && (!R._dk || s.dk === R._dk));
 }
 function categoryOf(s){
   if (has(s.cat)) return s.cat;
@@ -706,8 +758,9 @@ function pageDistribution(R, n){
   const rows = servRows(R); if (!rows || !rows.length) return '';
   const byProv = R._tipo === 'Región';
   const units = {}; const order = [];
-  rows.forEach(s => { const name = byProv ? s.prov : s.dist; const k = tkey(name) || '-';
-    if (!units[k]){ units[k] = { nombre: name || 'Sin dato', items: [] }; order.push(k); } units[k].items.push(s); });
+  rows.forEach(s => { const k = (byProv ? s.pk : s.dk) || '-';
+    const known = byProv ? R._region._subs[k] : (R._region._subs[R._pk] || {dists:{}}).dists[k];
+    if (!units[k]){ units[k] = { nombre: (known && known.nombre) || (byProv ? s.prov : s.dist) || 'Sin dato', items: [] }; order.push(k); } units[k].items.push(s); });
   if (order.length < 2 && !R._mapa) return '';
   const servs = [...new Set(rows.map(s => s.servicio))];
   const sym = items => items.flatMap(s => Array(Math.min(s.n, 12)).fill(symbolSvg(s.servicio))).join('');
