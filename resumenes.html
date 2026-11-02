@@ -126,6 +126,7 @@ label.btn{display:inline-flex;align-items:center}
 .svc-item{display:grid;grid-template-columns:11mm 1fr;align-items:center;gap:2mm}
 .svc-item .n{font-size:15pt;font-weight:800;color:var(--c,var(--amber));text-align:center}
 .svc-item .t{font-size:9pt;font-weight:700;line-height:1.25}
+.svc-item .t.none{font-weight:400;color:var(--ink-2)}
 .svc-item .t small{display:block;font-weight:400;font-size:8pt}
 
 /* Servicios implementados */
@@ -139,6 +140,7 @@ label.btn{display:inline-flex;align-items:center}
 .prov span:first-child{font-weight:600}
 .sym{display:inline-flex;gap:1mm;flex-wrap:wrap;justify-content:flex-end}
 .sym svg{width:3.2mm;height:3.2mm}
+.leg.leg-cols{grid-template-columns:5mm 1fr 5mm 1fr;font-size:8pt;margin-top:3mm}
 .block h3{font-size:10.5pt;font-weight:700;margin-bottom:2mm}
 .block .big{font-size:14pt;font-weight:800;color:var(--red)}
 .block .big.amber{color:var(--amber)}
@@ -226,7 +228,8 @@ const CONFIG = {
     gobernador: BASE + '353378163',
     poblacion:  BASE + '1109551559',
     servicios:  BASE + '806903940',
-    iconos:     BASE + '395452209'   // hoja Iconos: Indicador | Icono
+    iconos:     BASE + '395452209',  // hoja Iconos: Indicador | Icono
+    serv_impl:  BASE + '2038705844'  // hoja Serv_impl: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Recuento
   },
   CAMPOS: {
     gobernador: {
@@ -249,6 +252,27 @@ const CONFIG = {
       beneficencias:'Sociedades', juguemos:'Juguemos', ponte_modo_ninez:'Estrategias', demuna:'Demuna_Nro', ciam:'CIAM_nro'
     }
   },
+  // Agrupación de los servicios de la hoja Serv_impl. Un servicio entra en la
+  // primera categoría que tenga alguna de sus "claves" dentro del nombre.
+  // Si la hoja tiene una columna "Categoría", se usa esa columna en su lugar.
+  CATEGORIAS: [
+    { nombre:'En atención a la violencia', icono:'Atención a la violencia', vacio:'No hay servicios de atención a la violencia',
+      claves:['centro emergencia mujer','hogares de refugio','servicio de atencion rural','servicio de atencion urgente','linea 100','chat 100'] },
+    { nombre:'En niñas, niños y adolescentes', icono:'Servicios NNA', vacio:'No hay servicios para niñas, niños y adolescentes',
+      claves:['unidad de proteccion especial','educadores de calle','car basico','car especializado','car de urgencia','unidad de adopcion'] },
+    { nombre:'En personas con discapacidad', icono:'Servicios discapacidad', vacio:'No hay centros de personas con discapacidad',
+      claves:['car pcd'] },
+    { nombre:'En personas adultas mayores', icono:'Servicios adultos mayores', vacio:'No hay centros de adultos mayores',
+      claves:['centro de atencion de dia','centro de atencion de noche','carpam','adultas mayores','mi60'] },
+    { nombre:'En familias', icono:'Servicios familias', claves:['desarrollo integral de la familia','cedif','comunal familiar','recreacion familiar','familias igualitarias'] }
+  ],
+  OTROS: 'Otros servicios',
+  // Atenciones (hoja Servicios, solo regional) que se muestran junto a cada servicio
+  ATENCIONES: [
+    { servicio:'centro emergencia mujer y familia - regular', campo:'cem_reg_at' },
+    { servicio:'centro emergencia mujer y familia - 24 horas', campo:'cem24_at' },
+    { servicio:'hogares de refugio temporal', campo:'hrt_at', etiqueta:'personas atendidas' }
+  ],
   FUENTES: {
     autoridades: 'Infogob - Jurado Nacional de Elecciones',
     poblacion: 'INEI - Censo 2025. Elaborado: OGMEPGD',
@@ -311,22 +335,51 @@ function status(msg, err=false){ const s=$('status'); s.textContent=msg||''; s.c
 // ── Datos ──
 let REGIONES = [], NACIONAL = {}, ICONS = {};
 
-// Símbolos de los servicios (mismos colores que el mapa)
-const SYMBOLS = { cem_reg:['diamond','#FF1A1A'], cem24:['circle','#00AEEF'], hrt:['triangle','#D4D924'], upe:['triangle','#1F2430'], pcd:['square','#7F3FE0'] };
-function symbolSvg(key){
-  const [shape,color] = SYMBOLS[key] || ['dot','#7A8392'];
+// Símbolos de los servicios (los primeros, iguales a los del mapa original)
+const SYMBOL_FIXED = [
+  ['centro emergencia mujer y familia - regular',['diamond','#FF1A1A']], ['centro emergencia mujer y familia - 24 horas',['circle','#00AEEF']],
+  ['hogares de refugio',['triangle','#D4D924']], ['servicio de atencion rural',['square','#7F3FE0']], ['coordinacion territorial',['dot','#1F2430']],
+  ['unidad de proteccion especial',['triangle','#1F2430']], ['educadores de calle',['square-o','#C8601A']]
+];
+const SYMBOL_POOL = [['circle','#3FA34D'],['diamond','#7F3FE0'],['square','#F2A900'],['triangle','#C2185B'],['circle-o','#3B2E7E'],['square-o','#2FA4E7'],
+  ['diamond','#3FA34D'],['triangle','#F2A900'],['square','#C2185B'],['circle','#7A8392'],['diamond','#1F2430'],['triangle','#2FA4E7'],['square-o','#3FA34D'],['circle-o','#C8102E']];
+const SYMBOLS = {};
+function assignSymbols(names){
+  let i = 0;
+  names.forEach(n => { const f = SYMBOL_FIXED.find(([k]) => norm(n).includes(k)); SYMBOLS[n] = f ? f[1] : SYMBOL_POOL[i++ % SYMBOL_POOL.length]; });
+}
+function symbolSvg(name){
+  const [shape,color] = SYMBOLS[name] || ['dot','#7A8392'];
   const p = {
     'diamond':`<path d="M6 .8 11.2 6 6 11.2.8 6z" fill="${color}"/>`,
     'circle':`<circle cx="6" cy="6" r="5" fill="${color}"/>`,
+    'circle-o':`<circle cx="6" cy="6" r="4.2" fill="none" stroke="${color}" stroke-width="1.6"/>`,
     'dot':`<circle cx="6" cy="6" r="4.4" fill="${color}"/>`,
     'triangle':`<path d="M6 .8 11.4 11H.6z" fill="${color}"/>`,
-    'square':`<rect x="1" y="1" width="10" height="10" fill="${color}"/>`
+    'square':`<rect x="1" y="1" width="10" height="10" fill="${color}"/>`,
+    'square-o':`<rect x="1.8" y="1.8" width="8.4" height="8.4" fill="none" stroke="${color}" stroke-width="1.8"/>`
   }[shape];
   return `<svg viewBox="0 0 12 12">${p}</svg>`;
 }
+// Clave para cruzar territorios aunque cambien tildes, mayúsculas o guiones
+const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
+let SERV = [];
 
 async function loadData(){
-  const names = Object.keys(CONFIG.HOJAS).filter(k => k !== 'iconos' && CONFIG.HOJAS[k]);
+  const names = Object.keys(CONFIG.HOJAS).filter(k => !['iconos','serv_impl'].includes(k) && CONFIG.HOJAS[k]);
+  const servP = CONFIG.HOJAS.serv_impl ? fetchText(CONFIG.HOJAS.serv_impl).then(raw => {
+    const lines = raw.replace(/\r\n?/g,'\n').split('\n').filter(l => l.replace(/[\t,]/g,'').trim());
+    const sep = lines[0].includes('\t') ? '\t' : ',';
+    const split = l => sep === '\t' ? l.split('\t') : (l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || []).map(x => x.replace(/,$/,'').replace(/^"|"$/g,'').replace(/""/g,'"'));
+    const head = split(lines[0]).map(norm);
+    const col = n => head.indexOf(n);
+    const [iR,iP,iD,iC,iM,iN,iK] = [col('departamento'),col('provincia'),col('distrito'),col('centro'),col('modalidad'),col('recuento'),col('categoria')];
+    SERV = lines.slice(1).map(split).map(c => {
+      const centro = (c[iC]||'').trim(), mod = iM >= 0 ? (c[iM]||'').trim() : '';
+      return { reg:tkey(c[iR]), prov:(c[iP]||'').trim(), dist:(c[iD]||'').trim(), servicio: mod ? `${centro} - ${mod}` : centro,
+               cat: iK >= 0 ? (c[iK]||'').trim() : '', n: num(c[iN]) ?? 1 };
+    }).filter(s => s.reg && s.servicio);
+  }).catch(() => { SERV = null; }) : Promise.resolve();
   const iconsP = CONFIG.HOJAS.iconos ? fetchText(CONFIG.HOJAS.iconos).then(raw => {
     ICONS = {};
     raw.replace(/\r\n?/g,'\n').split('\n').slice(1).forEach(l => {
@@ -359,11 +412,11 @@ async function loadData(){
       const prov = iProv >= 0 ? c[iProv] : '', dist = iDist >= 0 ? c[iDist] : '';
       let target = R;
       if (has(prov) || has(dist)){
-        const pk = norm(prov) || '-';
+        const pk = tkey(prov) || '-';
         if (!R._subs[pk]){ R._subs[pk] = { nombre: prov || 'Sin provincia', rec: {}, dists: {}, distOrder: [] }; R._subOrder.push(pk); }
         const P = R._subs[pk]; target = P.rec;
         if (has(dist)){
-          const dk = norm(dist);
+          const dk = tkey(dist);
           if (!P.dists[dk]){ P.dists[dk] = { nombre: dist, rec: {} }; P.distOrder.push(dk); }
           target = P.dists[dk].rec;
         }
@@ -381,12 +434,24 @@ async function loadData(){
     sumUp(R, R._subOrder.map(pk => R._subs[pk].rec));
     R._nProv = R._subOrder.filter(pk => pk !== '-').length;
     R._nDist = R._subOrder.reduce((a,pk) => a + R._subs[pk].distOrder.length, 0);
+    R._nDistOf = Object.fromEntries(R._subOrder.map(pk => [pk, R._subs[pk].distOrder.length]));
   });
-  await iconsP;
+  await iconsP; await servP;
+  // Territorios que solo aparecen en Serv_impl se agregan a los filtros (sin datos de población)
+  (SERV || []).forEach(s => {
+    const R = byKey[s.reg] || byKey[Object.keys(byKey).find(k => tkey(k) === s.reg)]; if (!R || !has(s.prov)) return;
+    const pk = tkey(s.prov);
+    if (!R._subs[pk]){ R._subs[pk] = { nombre: s.prov, rec: {}, dists: {}, distOrder: [], soloServ: true }; R._subOrder.push(pk); }
+    const P = R._subs[pk], dk = tkey(s.dist);
+    if (dk && !P.dists[dk]){ P.dists[dk] = { nombre: s.dist, rec: {}, soloServ: true }; P.distOrder.push(dk); }
+  });
+  assignSymbols([...new Set((SERV || []).map(s => s.servicio))]);
   NACIONAL = byKey['nacional'] || {};
   REGIONES = order.filter(k => k !== 'nacional').map(k => byKey[k]);
   return failed;
 }
+// Datos que existen en alguna hoja (si están vacíos se muestra "No hay…")
+const MAPPED = new Set(Object.values(CONFIG.CAMPOS).flatMap(Object.keys));
 const POB_SUM = ['pob_total','pob_mujer','pob_hombre','pob_discapacidad','pob_0_5','pob_6_11','pob_12_17','pob_18_29','pob_30_59','pob_60_mas'];
 
 // Vista de una región, provincia o distrito: hereda los datos regionales y
@@ -403,7 +468,7 @@ function buildView(Rg, pk, dk){
     Object.assign(V, rec);
     V._local = new Set(Object.keys(rec));
     V._tipo = D ? 'Distrito' : 'Provincia'; V._nombre = D ? D.nombre : P.nombre; V._prov = P.nombre;
-    V._nDistProv = P.distOrder.length;
+    V._nDistProv = Rg._nDistOf[pk] ?? P.distOrder.length; V._pk = pk; V._dk = dk || '';
   }
   return V;
 }
@@ -536,11 +601,14 @@ function pageProfile(R, n){
     ['pcd_discriminacion','Personas con discapacidad que sufren discriminación', false, '', 'Discriminación discapacidad']
   ].filter(x => has(R[x[0]]));
   const svc = [
-    ['Niñas, niños y adolescentes','var(--amber)',[['demuna','Defensorías Municipales del Niño y el Adolescente (DEMUNA)', has(R.demuna_acreditadas)?`Existen ${nTxt(R.demuna_acreditadas)} DEMUNA acreditadas`:''],['juguemos','Juguemos en DEMUNA'],['ponte_modo_ninez','Estrategias Ponte en Modo Niñez en DEMUNA operativas']]],
-    ['Personas con discapacidad','#2FA4E7',[['oredis','Oficina Regional de Atención a las Personas con Discapacidad (OREDIS)']]],
-    ['Adultos mayores','#3FA34D',[['ciam','Centros Integrales del Adulto Mayor (CIAM)']]],
-    ['Dirección de Beneficencias','var(--violet)',[['beneficencias','Sociedades de Beneficencia']]]
-  ].map(([t,c,items]) => [t,c,items.filter(i=>has(R[i[0]]))]).filter(g=>g[2].length);
+    ['Niñas, niños y adolescentes','var(--amber)',[
+      ['demuna','Defensorías Municipales del Niño y el Adolescente (DEMUNA)', has(R.demuna_acreditadas)?`Existen ${nTxt(R.demuna_acreditadas)} DEMUNA acreditadas`:'', 'No hay Defensorías Municipales del Niño y el Adolescente (DEMUNA)'],
+      ['juguemos','Juguemos en DEMUNA','', 'No hay Juguemos en DEMUNA'],
+      ['ponte_modo_ninez','Estrategias Ponte en Modo Niñez en DEMUNA operativas','', 'No hay estrategias Ponte en Modo Niñez operativas']]],
+    ['Personas con discapacidad','#2FA4E7',[['oredis','Oficina Regional de Atención a las Personas con Discapacidad (OREDIS)','', 'No hay Oficina Regional de Atención a las Personas con Discapacidad (OREDIS)']]],
+    ['Adultos mayores','#3FA34D',[['ciam','Centros Integrales del Adulto Mayor (CIAM)','', 'No hay Centros Integrales del Adulto Mayor (CIAM)']]],
+    ['Dirección de Beneficencias','var(--violet)',[['beneficencias','Sociedades de Beneficencia','', 'No hay Sociedades de Beneficencia']]]
+  ].map(([t,c,items]) => [t,c,items.filter(i => MAPPED.has(i[0]) || has(R[i[0]]))]).filter(g=>g[2].length);
   const ICON_SVC = {'Niñas, niños y adolescentes':'Servicios NNA','Personas con discapacidad':'Servicios discapacidad','Adultos mayores':'Servicios adultos mayores','Dirección de Beneficencias':'Beneficencias'};
   const pair = (lbl, m, h, key, ic) => (has(R[m])||has(R[h])) ? `<div class="ind">${withIcon(ic, `
       <div class="row">Mujer: <b>${fmtP(R[m])}</b></div><div class="row">Hombre: <b>${fmtP(R[h])}</b></div>
@@ -572,48 +640,83 @@ function pageProfile(R, n){
         <div class="note">(**) Violencia familiar contra la mujer de 15 a 49 años de edad, ejercida alguna vez por el esposo o compañero.</div>` : ''}
         ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>${lvlNote(R, ['demuna','juguemos','ponte_modo_ninez','oredis','ciam','beneficencias'])}
         ${svc.map(([t,c,items]) => `<div class="svc-group" style="--c:${c}"><div class="svc-head">${icon(ICON_SVC[t],'ic-h')}${t}</div>
-          ${items.map(([k,l,s]) => `<div class="svc-item"><span class="n">${nTxt(R[k])}</span><span class="t">${l}${s?`<small>${s}</small>`:''}</span></div>`).join('')}</div>`).join('')}` : ''}
+          ${items.map(([k,l,s,none]) => !has(R[k]) || num(R[k]) === 0
+            ? `<div class="svc-item"><span class="n">–</span><span class="t none">${none}</span></div>`
+            : `<div class="svc-item"><span class="n">${nTxt(R[k])}</span><span class="t">${l}${s?`<small>${s}</small>`:''}</span></div>`).join('')}</div>`).join('')}` : ''}
       </div>
     </div></div>${footer(R,n)}</section>`;
 }
 
 // ── Página 4: servicios implementados ──
+function servRows(R){
+  if (!SERV) return null;
+  const rk = tkey(R.region);
+  return SERV.filter(s => s.reg === rk && (!R._pk || tkey(s.prov) === R._pk) && (!R._dk || tkey(s.dist) === R._dk));
+}
+function categoryOf(s){
+  if (has(s.cat)) return s.cat;
+  const n = norm(s.servicio);
+  const c = CONFIG.CATEGORIAS.find(c => c.claves.some(k => n.includes(norm(k))));
+  return c ? c.nombre : CONFIG.OTROS;
+}
+function groupServices(rows){
+  const map = {}; const order = [];
+  rows.forEach(s => { if (!map[s.servicio]){ map[s.servicio] = { nombre:s.servicio, n:0, cat:categoryOf(s) }; order.push(s.servicio); } map[s.servicio].n += s.n; });
+  return order.map(k => map[k]);
+}
+const atencionDe = (R, nombre) => {
+  if (isSub(R)) return null;
+  const a = CONFIG.ATENCIONES.find(a => norm(nombre).includes(norm(a.servicio)));
+  return a && has(R[a.campo]) ? { v:num(R[a.campo]), l:a.etiqueta || 'atenciones' } : null;
+};
 function pageServices(R, n){
-  const mk = (key, nKey, atKey, nombre, atLabel='atenciones') => ({key, n:num(R[nKey])||0, at:has(R[atKey]) ? num(R[atKey]) : null, nombre, atLabel});
-  const cem = [mk('cem_reg','cem_reg_n','cem_reg_at','Centros Emergencia Mujer y Familia - Regular'), mk('cem24','cem24_n','cem24_at','Centros Emergencia Mujer y Familia - 24 horas')].filter(s => s.n);
-  const otros = [mk('hrt','hrt_n','hrt_at','Hogar de Refugio Temporal (HRT)','personas atendidas')].filter(s => s.n);
-  const nna = [mk('upe','upe_n',null,'Unidad de Protección Especial (UPE)')].filter(s => s.n);
-  const pcd = [mk('pcd','pcd_centros',null,'Centros de atención a personas con discapacidad')].filter(s => s.n);
-  const all = [...cem, ...otros, ...nna, ...pcd];
-  if (!all.length && !has(R.periodo)) return '';
-  const sumAt = list => list.reduce((a,s) => a + (s.at||0), 0);
+  const rows = servRows(R);
+  if (rows === null) return '';
+  const list = groupServices(rows);
   const pad = x => String(x).padStart(2,'0');
-  const legend = list => `<div class="leg">${list.map(s => `${symbolSvg(s.key)}<span><b>${pad(s.n)}</b> ${esc(s.nombre)}${s.at!=null?` (${fmtN(s.at)} ${s.atLabel})`:''}</span>`).join('')}</div>`;
-  const cemTot = has(R.cem_total_at) ? num(R.cem_total_at) : sumAt(cem);
-  const violTot = cemTot + sumAt(otros);
-  const block = (title, list, emptyMsg, ic) => `<div class="block"><h3>${icon(ic,'ic-h')}${title}</h3>${list.length ? legend(list) : `<p class="muted">${emptyMsg}</p>`}</div>`;
-
+  const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
+  list.forEach(s => { if (!cats.includes(s.cat)) cats.push(s.cat); });
+  const legend = items => `<div class="leg">${items.map(s => { const a = atencionDe(R, s.nombre);
+    return `${symbolSvg(s.nombre)}<span><b>${pad(s.n)}</b> ${esc(s.nombre)}${a ? ` (${fmtN(a.v)} ${a.l})` : ''}</span>`; }).join('')}</div>`;
+  const blocks = cats.map(cname => {
+    const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === cname) || {};
+    const items = list.filter(s => s.cat === cname);
+    if (!items.length && !cfg.vacio) return '';
+    const ats = items.map(s => atencionDe(R, s.nombre)).filter(a => a && a.l === 'atenciones');
+    const tot = ats.length ? `<div class="tot"><span class="big">${fmtN(ats.reduce((a,x)=>a+x.v,0))}</span><span>total de atenciones</span></div>` : '';
+    return `<div class="block"><h3>${icon(cfg.icono,'ic-h')}${esc(cname)}</h3>${items.length ? tot + legend(items) : `<p class="muted">${esc(cfg.vacio)}</p>`}</div>`;
+  }).filter(Boolean);
+  const half = Math.ceil(blocks.length / 2);
+  const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
   return `<section class="page">${band(R)}<div class="page-body">
     <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>
-      <div class="svc-counts"><b>${pad(all.length)}</b> servicios MIMP<br><b>${pad(all.reduce((a,s)=>a+s.n,0))}</b> centros</div></div>
-    ${lvlNote(R, ['cem_reg_n','cem24_n','hrt_n','upe_n','pcd_centros'])}
-    ${R._mapa ? `<div class="map"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : ''}
-    <div class="cols divided">
-      <div class="col">
-        <div class="block"><h3>${icon('Atención a la violencia','ic-h')}En atención a la violencia</h3>
-          ${cem.length || otros.length ? `<div class="tot"><span class="big">${fmtN(violTot)}</span><span>total de atenciones</span></div>
-            ${cem.length ? `<div class="sub">Centros Emergencia Mujer y Familia (<b>${fmtN(cemTot)}</b> atenciones)</div>${legend(cem)}` : ''}
-            ${otros.length ? `<div class="sub">Otros servicios (<b>${fmtN(sumAt(otros))}</b> ${otros.every(s=>s.atLabel!=='atenciones')?'personas atendidas':'atenciones'})</div>${legend(otros)}` : ''}`
-          : '<p class="muted">No hay centros de atención a la violencia</p>'}
-        </div>
-      </div>
-      <div class="col">
-        ${block('En niñas, niños y adolescentes', nna, 'No hay centros de atención a niñas, niños y adolescentes', 'Servicios NNA')}
-        <hr class="sep">
-        ${block('En personas con discapacidad', pcd, 'No hay centros de personas con discapacidad', 'Servicios discapacidad')}
-      </div>
-    </div>
+      <div class="svc-counts"><b>${pad(list.length)}</b> servicios MIMP<br><b>${pad(list.reduce((a,s)=>a+s.n,0))}</b> centros</div></div>
+    ${isSub(R) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
+    ${list.length ? `<div class="cols divided">
+      <div class="col">${blocks.slice(0,half).join('<hr class="sep">')}</div>
+      <div class="col">${blocks.slice(half).join('<hr class="sep">')}</div>
+    </div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
+  </div>${footer(R,n)}</section>`;
+}
+
+// ── Página 5: distribución territorial de los servicios ──
+function pageDistribution(R, n){
+  if (R._tipo === 'Distrito') return '';
+  const rows = servRows(R); if (!rows || !rows.length) return '';
+  const byProv = R._tipo === 'Región';
+  const units = {}; const order = [];
+  rows.forEach(s => { const name = byProv ? s.prov : s.dist; const k = tkey(name) || '-';
+    if (!units[k]){ units[k] = { nombre: name || 'Sin dato', items: [] }; order.push(k); } units[k].items.push(s); });
+  if (order.length < 2 && !R._mapa) return '';
+  const servs = [...new Set(rows.map(s => s.servicio))];
+  const sym = items => items.flatMap(s => Array(Math.min(s.n, 12)).fill(symbolSvg(s.servicio))).join('');
+  return `<section class="page">${band(R)}<div class="page-body">
+    <div><span class="h2">Distribución de los servicios por ${byProv ? 'provincia' : 'distrito'}</span></div>
+    ${R._tipo === 'Región' && R._mapa ? `<div class="map"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : ''}
+    <div class="prov-grid">${order.map(k => { const u = units[k]; const tot = u.items.reduce((a,s)=>a+s.n,0);
+      return `<div class="prov"><span>${esc(u.nombre)} <small class="muted">(${tot})</small></span><span class="sym">${sym(u.items)}</span></div>`; }).join('')}</div>
+    <div class="leg leg-cols">${servs.map(s => `${symbolSvg(s)}<span>${esc(s)}</span>`).join('')}</div>
   </div>${footer(R,n)}</section>`;
 }
 
@@ -639,7 +742,7 @@ function pageUPE(R, n){
 
 function buildPages(R){
   const out = [pageCover(R)];
-  [pageAuthorities, pageProfile, pageServices, pageUPE].forEach(fn => { const h = fn(R, out.length+1); if(h) out.push(h); });
+  [pageAuthorities, pageProfile, pageServices, pageDistribution, pageUPE].forEach(fn => { const h = fn(R, out.length+1); if(h) out.push(h); });
   return out.join('');
 }
 
