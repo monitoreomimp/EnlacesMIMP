@@ -173,6 +173,7 @@ label.btn{display:inline-flex;align-items:center}
 .dirt .sv{display:flex;gap:1.5mm;align-items:flex-start}
 .dirt .sv svg{width:2.8mm;height:2.8mm;flex-shrink:0;margin-top:.3mm}
 .dirt .ok{color:#2E7D32;font-weight:600}
+.dirt .mail{color:var(--ink-2);font-size:6.6pt;overflow-wrap:anywhere}
 .dirt .muted{font-size:inherit;color:var(--ink-3)}
 .dirt .bad{color:var(--red);font-weight:600}
 .red-h{font-size:10pt;color:var(--red);margin-bottom:2mm}
@@ -252,8 +253,9 @@ const CONFIG = {
     servicios:  BASE + '806903940',
     indicadores: BASE + '1665840861',
     iconos:     BASE + '395452209',  // hoja Iconos: Indicador | Icono
-    serv_impl:  BASE + '2038705844', // hoja Serv_impl: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Recuento
-    directorio: BASE + '1491743529'  // hoja Directorio: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Centro de Atención | Dirección | Coordinador/a | CUENTA CON ...
+    // Hoja "Servicios" (antes Directorio): una fila por centro. De aquí salen el directorio,
+    // la cantidad de servicios y centros, el mapa y la población atendida (POB_ATEND).
+    directorio: BASE + '1491743529'
   },
   CAMPOS: {
     gobernador: {
@@ -417,7 +419,7 @@ function parseSheet(raw){
 // Fila de encabezado: la primera que tenga "Departamento" o "Región"
 function headerRow(rows){
   for (let i = 0; i < Math.min(rows.length, 6); i++){
-    const j = rows[i].findIndex(c => ['departamento','region'].includes(norm(c)));
+    const j = rows[i].findIndex(c => ['departamento','region','dpto','departamento/region'].includes(norm(c)));
     if (j >= 0) return { i, reg: j };
   }
   return { i: 0, reg: 0 };
@@ -436,17 +438,24 @@ async function loadData(){
   const names = Object.keys(CONFIG.HOJAS).filter(k => !['iconos','serv_impl','directorio'].includes(k) && CONFIG.HOJAS[k]);
   const dirP = CONFIG.HOJAS.directorio ? fetchText(CONFIG.HOJAS.directorio).then(raw => {
     const rows = parseSheet(raw); const h = headerRow(rows); const head = rows[h.i].map(norm);
+    // cada dato acepta varios nombres de encabezado (el formato nuevo y el anterior)
+    const pick = (...names) => { for (const n of names){ const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
     const find = (...keys) => head.findIndex(x => keys.some(k => x.includes(k)));
-    const iU = find('ubigeo'), iP = head.indexOf('provincia'), iD = head.indexOf('distrito'), iC = head.indexOf('centro'),
-          iM = find('modalidad'), iN = find('centro de atencion'), iA = find('direccion'), iK = find('coordin','coodin'),
-          iT = head.findIndex(x => /(telefono|celular|numero de contacto)/.test(x) && !x.includes('cuenta con'));
+    const iU = pick('ubigeo'), iP = pick('prov','provincia'), iD = pick('dist','distrito'),
+          iC = pick('tipo','centro','tipo de servicio','servicio'), iM = pick('modalidad'),
+          iN = pick('nomb_sspp','centro de atencion','nombre','nombre del servicio'), iA = pick('direccion'),
+          iK = head.findIndex(x => /^(coord|coodin)/.test(x)),
+          iT = head.findIndex(x => /(celular|telefono|numero de contacto)/.test(x) && !x.includes('cuenta con')),
+          iE = find('correo'), iPA = pick('pob_atend','poblacion atendida','atendidos'), iPer = pick('periodo');
     const BAS = [['telefono','teléfono'],['internet','internet'],['luz','luz'],['agua','agua'],['desague','desagüe']]
       .map(([k, l]) => [head.findIndex(x => x.includes('cuenta con') && x.includes(k)), l]).filter(([i]) => i >= 0);
     DIR = rows.slice(h.i+1).filter(c => has(c[h.reg]) && has(c[iC])).map(c => {
       const prov = c[iP]||'', dist = c[iD]||'', mod = iM >= 0 ? (c[iM]||'') : '';
+      const clean = i => i >= 0 ? (c[i]||'').replace(/\s+/g,' ').trim() : '';
       const r = { reg: tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
         servicio: mod && norm(mod) !== norm(c[iC]) ? `${c[iC]} - ${mod}` : c[iC], cat: '',
-        nombre: iN >= 0 ? c[iN]||'' : '', dir: iA >= 0 ? (c[iA]||'').replace(/\s+/g,' ') : '', coord: iK >= 0 ? (c[iK]||'').replace(/\s+/g,' ') : '', tel: iT >= 0 ? (c[iT]||'').replace(/\s+/g,' ') : '',
+        nombre: clean(iN), dir: clean(iA), coord: clean(iK), tel: clean(iT), correo: clean(iE),
+        at: iPA >= 0 ? num(c[iPA]) : null, periodo: clean(iPer), n: 1,
         si: [], no: [], nd: [] };
       BAS.forEach(([i, l]) => { const v = norm(c[i]); (v.startsWith('s') ? r.si : v.startsWith('n') ? r.no : r.nd).push(l); });
       return r;
@@ -521,6 +530,8 @@ async function loadData(){
     sumUp(R, R._subOrder.map(pk => R._subs[pk].rec));
     R._nProv = R._subOrder.filter(pk => pk !== '-').length;
     R._nDist = R._subOrder.reduce((a,pk) => a + R._subs[pk].distOrder.length, 0);
+    // el periodo de corte se toma de la hoja de centros (Servicios); si no tiene, del anterior
+    if (DIR){ const p = DIR.find(d => d.reg === tkey(R.region) && d.periodo); if (p) R.periodo = p.periodo; }
     R._nDistOf = Object.fromEntries(R._subOrder.map(pk => [pk, R._subs[pk].distOrder.length]));
     // Alcaldesas = mujeres alcaldesas provinciales + distritales
     const alc = ['alc_prov_m','alc_prov_h','alc_dist_m','alc_dist_h'].map(k => num(R[k]));
@@ -530,6 +541,7 @@ async function loadData(){
     }
   });
   await iconsP; await servP; await dirP;
+  if (DIR && DIR.length) SERV = DIR;   // los servicios implementados salen de la misma hoja
   // Territorios que solo aparecen en Serv_impl se agregan a los filtros (sin datos de población)
   (SERV || []).forEach(s => {
     const R = byKey[s.reg]; if (!R || !s.pk) return;
@@ -754,10 +766,12 @@ function categoryOf(s){
 }
 function groupServices(rows){
   const map = {}; const order = [];
-  rows.forEach(s => { if (!map[s.servicio]){ map[s.servicio] = { nombre:s.servicio, n:0, cat:categoryOf(s) }; order.push(s.servicio); } map[s.servicio].n += s.n; });
+  rows.forEach(s => { if (!map[s.servicio]){ map[s.servicio] = { nombre:s.servicio, n:0, at:null, cat:categoryOf(s) }; order.push(s.servicio); }
+    const m = map[s.servicio]; m.n += s.n; if (s.at != null) m.at = (m.at || 0) + s.at; });
   return order.map(k => map[k]);
 }
-const atencionDe = (R, nombre) => {
+const atencionDe = (R, nombre, s) => {
+  if (s && s.at != null) return { v: s.at, l: 'personas atendidas' };
   if (isSub(R)) return null;
   const a = CONFIG.ATENCIONES.find(a => norm(nombre).includes(norm(a.servicio)));
   return a && has(R[a.campo]) ? { v:num(R[a.campo]), l:a.etiqueta || 'atenciones' } : null;
@@ -769,14 +783,15 @@ function pageServices(R, n){
   const pad = x => String(x).padStart(2,'0');
   const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
   list.forEach(s => { if (!cats.includes(s.cat)) cats.push(s.cat); });
-  const legend = items => `<div class="leg">${items.map(s => { const a = atencionDe(R, s.nombre);
+  const legend = items => `<div class="leg">${items.map(s => { const a = atencionDe(R, s.nombre, s);
     return `${symbolSvg(s.nombre)}<span><b>${pad(s.n)}</b> ${esc(s.nombre)}${a ? ` (${fmtN(a.v)} ${a.l})` : ''}</span>`; }).join('')}</div>`;
   const blocks = cats.map(cname => {
     const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === cname) || {};
     const items = list.filter(s => s.cat === cname);
     if (!items.length && !cfg.vacio) return '';
-    const ats = items.map(s => atencionDe(R, s.nombre)).filter(a => a && a.l === 'atenciones');
-    const tot = ats.length ? `<div class="tot"><span class="big">${fmtN(ats.reduce((a,x)=>a+x.v,0))}</span><span>total de atenciones</span></div>` : '';
+    const ats = items.map(s => atencionDe(R, s.nombre, s)).filter(Boolean);
+    const lbl = ats.length && ats.every(a => a.l === 'personas atendidas') ? 'personas atendidas' : 'total de atenciones';
+    const tot = ats.length ? `<div class="tot"><span class="big">${fmtN(ats.reduce((a,x)=>a+x.v,0))}</span><span>${lbl}</span></div>` : '';
     return { w: Math.max(items.length, 1) + (tot ? 3 : 2), html: `<div class="block"><h3>${icon(cfg.icono,'ic-h')}${esc(cname)}</h3>${items.length ? tot + legend(items) : `<p class="muted">${esc(cfg.vacio)}</p>`}</div>` };
   }).filter(Boolean);
   // reparte los bloques en dos columnas de alto parecido
@@ -793,7 +808,7 @@ function pageServices(R, n){
       <div class="svc-counts inline"><span><b>${pad(list.length)}</b> servicios MIMP</span><span><b>${pad(list.reduce((a,s)=>a+s.n,0))}</b> centros</span></div></div>
     ${map ? `<div class="map-cap">${R._tipo === 'Región' ? `Mapa provincial · Región ${esc(R.region)}` : `Mapa distrital · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`}</div><div class="map map-geo">${map}</div>` : (R._tipo === 'Región' && R._mapa ? `<div class="map" style="height:${mapH}mm"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : '')}
     ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito aparece resaltado dentro de la provincia de ${esc(R._prov)}.</div>` : ''}
-    ${isSub(R) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
+    ${isSub(R) && !rows.some(s => s.at != null) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
     ${list.length ? `<div class="cols divided">
       <div class="col">${colA.join('<hr class="sep">')}</div>
       <div class="col">${colB.join('<hr class="sep">')}</div>
@@ -974,13 +989,13 @@ function pageDirectory(R, n){
       body += `<tr class="cat"><td colspan="${ncol}">${icon(cfg.icono,'ic-h')}${esc(r.cat.replace(/^En /,'').replace(/^./, c => c.toUpperCase()))} <span class="muted">(${count(x => x.cat === r.cat)})</span></td></tr>`; }
     if (r.servicio !== lastS){ lastS = r.servicio;
       body += `<tr class="svc"><td colspan="${ncol}"><span class="sv">${symbolSvg(r.servicio)}<span>${esc(r.servicio)} <span class="muted">(${count(x => x.cat === r.cat && x.servicio === r.servicio)})</span></span></span></td></tr>`; }
-    body += `<tr><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${r.tel ? esc(r.tel) : '<span class="muted">—</span>'}</td><td>${esc(r.coord)}</td><td>${basicos(r)}</td></tr>`;
+    body += `<tr><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${r.tel ? esc(r.tel) : (r.correo ? '' : '<span class="muted">—</span>')}${r.correo ? `${r.tel ? '<br>' : ''}<span class="mail">${esc(r.correo)}</span>` : ''}</td><td>${esc(r.coord)}</td><td>${basicos(r)}</td></tr>`;
   });
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
   return `<section class="page dir">${band(R)}<div class="page-body">
     <div class="dir-intro"><span class="h2">Directorio de servicios</span><p class="muted" style="margin-top:2mm;font-size:8.5pt">${rows.length} centros de atención en ${lugar}. "Servicios básicos" indica si el local cuenta con teléfono, internet, luz, agua y desagüe.</p></div>
     <table class="dirt"><colgroup><col style="width:${showUb?19:22}%">${showUb ? '<col style="width:13%">' : ''}<col style="width:${showUb?27:32}%"><col style="width:${showUb?12:13}%"><col style="width:${showUb?16:18}%"><col style="width:${showUb?13:15}%"></colgroup>
-      <thead><tr><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Teléfono</th><th>Coordinador/a</th><th>Servicios básicos</th></tr></thead>
+      <thead><tr><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Contacto</th><th>Coordinador/a</th><th>Servicios básicos</th></tr></thead>
       <tbody>${body}</tbody></table>
   </div>${footer(R,n)}</section>`;
 }
