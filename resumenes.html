@@ -96,15 +96,17 @@ label.btn{display:inline-flex;align-items:center}
 
 /* Perfil */
 .title-c{text-align:center}
-.title-c h2{font-size:17pt;color:var(--violet);font-weight:700}
-.title-c p{font-size:15pt;color:var(--violet);margin-top:2mm}
-.title-c b{font-weight:500}
-.title-c .reg{font-size:11pt;color:var(--ink-2);margin-top:1.5mm}
+.title-c h2{font-size:15pt;color:var(--violet);font-weight:400;line-height:1.3}
+.title-c h2 .pt{font-weight:700}
+.title-c b{font-weight:600}
+.title-c .reg{font-size:10pt;color:var(--ink-2);margin-top:1.2mm}
+.title-c .reg b{font-weight:600}
 .band-sub{font-size:10pt;font-weight:500;letter-spacing:.02em;margin-top:1mm;opacity:.9}
 .cover-sub{font-size:14pt;font-weight:500;margin-top:-2mm}
 .lvl-note{align-self:flex-start;display:inline-block;background:#FFF4D6;color:#7A5A00;font-size:7.8pt;font-weight:600;padding:1mm 2.5mm;border-radius:1mm}
 .ctrl select.sm{min-width:160px}
-.pop-total{font-size:17pt;color:var(--violet);margin-top:2mm}
+.pop-head{display:flex;align-items:center;gap:2.5mm;flex-wrap:nowrap;white-space:nowrap}
+.pop-total{font-size:10.5pt;color:var(--violet);font-weight:600}
 .donuts{display:grid;grid-template-columns:repeat(3,1fr);gap:3mm 2mm}
 .donut{display:flex;flex-direction:column;align-items:center;text-align:center;position:relative}
 .donut .ic-d{position:absolute;left:0;top:0;width:7mm;height:7mm;object-fit:contain}
@@ -139,6 +141,7 @@ label.btn{display:inline-flex;align-items:center}
 .map img{max-width:100%;max-height:100%;display:block}
 .page-body > *{flex-shrink:0}
 .page-body > .map-geo{flex:1 1 0;min-height:55mm;max-height:125mm}
+.map-cap{font-size:8pt;color:var(--ink-3);letter-spacing:.04em;text-transform:uppercase;margin-top:-2mm}
 .map-geo > svg{width:100%;height:100%;display:block}
 .svc-counts.inline{display:flex;gap:10mm;line-height:1.2;align-self:center}
 .prov-grid{display:grid;grid-template-columns:1fr 1fr;gap:2.5mm 8mm;align-content:start}
@@ -666,12 +669,13 @@ function pageAuthorities(R, n){
 function territorio(R){
   const Rg = R._region;
   const counts = Rg._nProv || Rg._nDist ? `<b>${fmtN(Rg._nProv)} provincias</b> y <b>${fmtN(Rg._nDist)} distritos</b>` : '';
+  const head = txt => `<h2><span class="pt">Perfil territorial:</span> ${txt}</h2>`;
   if (R._tipo === 'Región')
-    return `<p>${counts ? `${esc(Rg.region)} tiene ${counts}` : `${esc(Rg.region)}: información disponible solo a nivel regional`}</p>`;
+    return head(counts ? `${esc(Rg.region)} tiene ${counts}` : `${esc(Rg.region)}, información disponible solo a nivel regional`);
   const top = R._tipo === 'Provincia'
     ? `La provincia de ${esc(R._nombre)} tiene <b>${fmtN(R._nDistProv)} distritos</b>`
     : `El distrito de ${esc(R._nombre)} pertenece a la provincia de ${esc(R._prov)}`;
-  return `<p>${top}</p><p class="reg">Región ${esc(Rg.region)}${counts ? ` · ${counts}` : ''}</p>`;
+  return head(top) + `<p class="reg">(Región ${esc(Rg.region)}${counts ? ` · ${counts}` : ''})</p>`;
 }
 function pageProfile(R, n){
   const T = num(R.pob_total);
@@ -705,11 +709,10 @@ function pageProfile(R, n){
       <div class="lbl">${lbl}</div>${srcLine(key)}`)}</div>` : '';
   const single = (key, lbl, isN, ic, extra) => has(R[key]) ? `<div class="ind">${withIcon(ic, `<div class="k">${isN?nTxt(R[key]):fmtP(R[key])}</div><div class="lbl">${lbl}</div>${extra?`<div class="row" style="font-size:8pt">${esc(extra)}</div>`:''}${srcLine(key)}`)}</div>` : '';
   return `<section class="page">${band(R)}<div class="page-body">
-    <div class="title-c"><h2>Perfil territorial</h2>
-      ${territorio(R)}</div>
+    <div class="title-c">${territorio(R)}</div>
     <div class="cols divided">
       <div class="col">
-        <div><span class="h2">Población censada</span>${T?`<div class="pop-total">${fmtN(T)} habitantes</div>`:''}</div>
+        <div class="pop-head"><span class="h2">Población censada</span>${T?`<span class="pop-total">${fmtN(T)} habitantes</span>`:''}</div>
         ${lvlNote(R, ['pob_total'])}
         <div class="donuts">${groups.map(([l,k,c,pk]) => `<div class="donut">${icon(ICON_POB[k],'ic-d')}${donut(has(R[pk]) ? pctNum(R[pk]) : share(num(R[k]),T),c)}<div class="donut-lbl">${l}</div><div class="donut-n">(${nTxt(R[k])})</div></div>`).join('')}</div>
         ${srcLine('poblacion')}
@@ -788,7 +791,7 @@ function pageServices(R, n){
   return `<section class="page">${band(R)}<div class="page-body">
     <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>
       <div class="svc-counts inline"><span><b>${pad(list.length)}</b> servicios MIMP</span><span><b>${pad(list.reduce((a,s)=>a+s.n,0))}</b> centros</span></div></div>
-    ${map ? `<div class="map map-geo">${map}</div>` : (R._tipo === 'Región' && R._mapa ? `<div class="map" style="height:${mapH}mm"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : '')}
+    ${map ? `<div class="map-cap">${R._tipo === 'Región' ? `Mapa provincial · Región ${esc(R.region)}` : `Mapa distrital · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`}</div><div class="map map-geo">${map}</div>` : (R._tipo === 'Región' && R._mapa ? `<div class="map" style="height:${mapH}mm"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : '')}
     ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito aparece resaltado dentro de la provincia de ${esc(R._prov)}.</div>` : ''}
     ${isSub(R) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
     ${list.length ? `<div class="cols divided">
