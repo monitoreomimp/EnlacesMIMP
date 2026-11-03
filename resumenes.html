@@ -160,6 +160,15 @@ label.btn{display:inline-flex;align-items:center}
 .kpi-pair{display:grid;grid-template-columns:1fr 1fr;gap:4mm}
 .kpi-pair .v{font-size:13pt;font-weight:800;color:var(--violet)}
 .kpi-pair .l{font-size:8.5pt;color:var(--ink-2)}
+.dirt{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7pt;line-height:1.3}
+.dirt th{background:#EEEAF8;color:var(--violet);text-align:left;font-weight:700;padding:1.4mm 1.5mm;font-size:7pt}
+.dirt td{padding:1.3mm 1.5mm;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+.dirt tr.cat td{background:var(--soft);font-weight:700;font-size:8pt;color:var(--ink);padding:1.6mm 1.5mm}
+.dirt .sv{display:flex;gap:1.5mm;align-items:flex-start}
+.dirt .sv svg{width:2.8mm;height:2.8mm;flex-shrink:0;margin-top:.3mm}
+.dirt .ok{color:#2E7D32;font-weight:600}
+.dirt .muted{font-size:inherit;color:var(--ink-3)}
+.dirt .bad{color:var(--red);font-weight:600}
 .red-h{font-size:10pt;color:var(--red);margin-bottom:2mm}
 hr.sep{border:none;border-top:1px solid var(--line)}
 
@@ -237,7 +246,8 @@ const CONFIG = {
     servicios:  BASE + '806903940',
     indicadores: BASE + '1665840861',
     iconos:     BASE + '395452209',  // hoja Iconos: Indicador | Icono
-    serv_impl:  BASE + '2038705844'  // hoja Serv_impl: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Recuento
+    serv_impl:  BASE + '2038705844', // hoja Serv_impl: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Recuento
+    directorio: BASE + '1491743529'  // hoja Directorio: Ubigeo | Departamento | Provincia | Distrito | CENTRO | Modalidad | Centro de Atención | Dirección | Coordinador/a | CUENTA CON ...
   },
   CAMPOS: {
     gobernador: {
@@ -389,7 +399,7 @@ function symbolSvg(name){
 }
 // Clave para cruzar territorios aunque cambien tildes, mayúsculas o guiones
 const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
-let SERV = [];
+let SERV = [], DIR = null;
 
 // Lee CSV o TSV y devuelve filas de celdas
 function parseSheet(raw){
@@ -417,7 +427,24 @@ function terrKeys(ub, prov, dist){
 let FUENTES_AUTO = {};
 
 async function loadData(){
-  const names = Object.keys(CONFIG.HOJAS).filter(k => !['iconos','serv_impl'].includes(k) && CONFIG.HOJAS[k]);
+  const names = Object.keys(CONFIG.HOJAS).filter(k => !['iconos','serv_impl','directorio'].includes(k) && CONFIG.HOJAS[k]);
+  const dirP = CONFIG.HOJAS.directorio ? fetchText(CONFIG.HOJAS.directorio).then(raw => {
+    const rows = parseSheet(raw); const h = headerRow(rows); const head = rows[h.i].map(norm);
+    const find = (...keys) => head.findIndex(x => keys.some(k => x.includes(k)));
+    const iU = find('ubigeo'), iP = head.indexOf('provincia'), iD = head.indexOf('distrito'), iC = head.indexOf('centro'),
+          iM = find('modalidad'), iN = find('centro de atencion'), iA = find('direccion'), iK = find('coordin','coodin');
+    const BAS = [['telefono','teléfono'],['internet','internet'],['luz','luz'],['agua','agua'],['desague','desagüe']]
+      .map(([k, l]) => [head.findIndex(x => x.includes('cuenta con') && x.includes(k)), l]).filter(([i]) => i >= 0);
+    DIR = rows.slice(h.i+1).filter(c => has(c[h.reg]) && has(c[iC])).map(c => {
+      const prov = c[iP]||'', dist = c[iD]||'', mod = iM >= 0 ? (c[iM]||'') : '';
+      const r = { reg: tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
+        servicio: mod && norm(mod) !== norm(c[iC]) ? `${c[iC]} - ${mod}` : c[iC], cat: '',
+        nombre: iN >= 0 ? c[iN]||'' : '', dir: iA >= 0 ? (c[iA]||'').replace(/\s+/g,' ') : '', coord: iK >= 0 ? (c[iK]||'').replace(/\s+/g,' ') : '',
+        si: [], no: [], nd: [] };
+      BAS.forEach(([i, l]) => { const v = norm(c[i]); (v.startsWith('s') ? r.si : v.startsWith('n') ? r.no : r.nd).push(l); });
+      return r;
+    });
+  }).catch(() => { DIR = null; }) : Promise.resolve();
   const servP = CONFIG.HOJAS.serv_impl ? fetchText(CONFIG.HOJAS.serv_impl).then(raw => {
     const rows = parseSheet(raw); const h = headerRow(rows); const head = rows[h.i].map(norm);
     const col = n => head.indexOf(n);
@@ -495,7 +522,7 @@ async function loadData(){
       R._alc_detalle = `${alc[0]||0} provincial${(alc[0]||0)===1?'':'es'} y ${alc[2]||0} distrital${(alc[2]||0)===1?'':'es'}, de ${alc.reduce((a,v)=>a+(v||0),0)} alcaldías`;
     }
   });
-  await iconsP; await servP;
+  await iconsP; await servP; await dirP;
   // Territorios que solo aparecen en Serv_impl se agregan a los filtros (sin datos de población)
   (SERV || []).forEach(s => {
     const R = byKey[s.reg]; if (!R || !s.pk) return;
@@ -503,7 +530,7 @@ async function loadData(){
     const P = R._subs[s.pk];
     if (s.dk && !P.dists[s.dk]){ P.dists[s.dk] = { nombre: s.dist, rec: {}, soloServ: true }; P.distOrder.push(s.dk); }
   });
-  assignSymbols([...new Set((SERV || []).map(s => s.servicio))]);
+  assignSymbols([...new Set([...(SERV || []), ...(DIR || [])].map(s => s.servicio))]);
   NACIONAL = byKey['nacional'] || {};
   REGIONES = order.filter(k => k !== 'nacional').map(k => byKey[k]);
   return failed;
@@ -818,24 +845,44 @@ function mapSvg(R){
   const label = (x, y, txt, size) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round">${esc(txt)}</text><text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#7A8392">${esc(txt)}</text>`;
   const provCentroid = {};
   [...provs].forEach(pk => { const g = geoms.filter(x => String(x.properties.IDPROV) === pk); if (g.length) provCentroid[pk] = path.centroid(topojson.merge(TOPO, g)); });
-  const labels = regionView
-    ? [...provs].filter(pk => provCentroid[pk]).map(pk => { const g = geoms.find(x => String(x.properties.IDPROV) === pk);
-        const name = (Rg._subs[pk] && Rg._subs[pk].nombre) || g.properties.NOMBPROV; const [x,y] = provCentroid[pk]; return label(x, y + 22, titleCase(name), 14); }).join('')
-    : fc.features.map(f => { const [x,y] = path.centroid(f); const size = fc.features.length > 30 ? 8 : 10;
-        const known = (Rg._subs[R._pk] || {dists:{}}).dists[String(f.properties.IDDIST)];
-        return label(x, y + 14, titleCase((known && known.nombre) || f.properties.NOMBDIST), size); }).join('');
-  // símbolos de los servicios, agrupados en el centro de cada distrito
   const rows = (SERV || []).filter(s => s.reg === tkey(Rg.region) && provs.has(s.pk) && (R._tipo !== 'Distrito' || s.dk === R._dk));
-  const groups = {}; rows.forEach(s => { const k = byDist[s.dk] ? s.dk : 'p' + s.pk; (groups[k] = groups[k] || []).push(s); });
   const S = 11, GAP = 2.5;
-  const marks = Object.entries(groups).map(([k, list]) => {
-    const c = k[0] === 'p' ? provCentroid[k.slice(1)] : path.centroid(byDist[k]); if (!c || isNaN(c[0])) return '';
-    const items = list.flatMap(s => Array(Math.min(s.n, 6)).fill(s.servicio));
-    const cols = Math.min(4, Math.ceil(Math.sqrt(items.length))), rowsN = Math.ceil(items.length / cols);
-    const x0 = c[0] - (cols * (S + GAP) - GAP) / 2, y0 = c[1] - (rowsN * (S + GAP) - GAP) / 2;
-    return items.map((sv, i) => symbolSvg(sv).replace('<svg ', `<svg x="${(x0 + (i % cols) * (S + GAP)).toFixed(1)}" y="${(y0 + Math.floor(i / cols) * (S + GAP)).toFixed(1)}" width="${S}" height="${S}" `)).join('');
-  }).join('');
-  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de servicios">${fills}${provLines}${outline}${labels}${marks}</svg>`;
+  const sym = (sv, x, y) => symbolSvg(sv).replace('<svg ', `<svg x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${S}" height="${S}" `);
+  let labels = '', marks = '';
+  if (regionView){
+    // vista regional: un grupo por provincia, un símbolo por tipo de servicio con su cantidad
+    const byProv = {}; rows.forEach(s => { const g = byProv[s.pk] = byProv[s.pk] || {}; g[s.servicio] = (g[s.servicio] || 0) + s.n; });
+    [...provs].filter(pk => provCentroid[pk]).forEach(pk => {
+      const [cx, cy] = provCentroid[pk];
+      const items = Object.entries(byProv[pk] || {});
+      const CW = 30, RH = S + 4;
+      const cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(items.length)))), rowsN = Math.ceil(items.length / cols);
+      const w = items.length ? Math.min(cols, items.length) * CW - (CW - S - 14) : 0, h = rowsN * RH;
+      const x0 = cx - w / 2, y0 = cy - h / 2;
+      if (items.length){
+        marks += `<rect x="${(x0-4).toFixed(1)}" y="${(y0-4).toFixed(1)}" width="${(w+8).toFixed(1)}" height="${(h+4).toFixed(1)}" rx="4" fill="#FFFFFF" fill-opacity=".85"/>`;
+        marks += items.map(([sv, n], i) => { const x = x0 + (i % cols) * CW, y = y0 + Math.floor(i / cols) * RH;
+          return sym(sv, x, y) + `<text x="${(x + S + 2.5).toFixed(1)}" y="${(y + S - 1.5).toFixed(1)}" font-family="Public Sans, Arial" font-size="10" font-weight="700" fill="#3B2E7E">${n}</text>`; }).join('');
+      }
+      const g = geoms.find(x => String(x.properties.IDPROV) === pk);
+      const name = (Rg._subs[pk] && Rg._subs[pk].nombre) || g.properties.NOMBPROV;
+      labels += label(cx, (items.length ? y0 + h + 12 : cy + 5), titleCase(name), 13);
+    });
+  } else {
+    labels = fc.features.map(f => { const [x,y] = path.centroid(f); const size = fc.features.length > 30 ? 8 : 10;
+      const known = (Rg._subs[R._pk] || {dists:{}}).dists[String(f.properties.IDDIST)];
+      return label(x, y + 14, titleCase((known && known.nombre) || f.properties.NOMBDIST), size); }).join('');
+    // símbolos agrupados en el centro de cada distrito
+    const groups = {}; rows.forEach(s => { const k = byDist[s.dk] ? s.dk : 'p' + s.pk; (groups[k] = groups[k] || []).push(s); });
+    marks = Object.entries(groups).map(([k, list]) => {
+      const c = k[0] === 'p' ? provCentroid[k.slice(1)] : path.centroid(byDist[k]); if (!c || isNaN(c[0])) return '';
+      const items = list.flatMap(s => Array(Math.min(s.n, 6)).fill(s.servicio));
+      const cols = Math.min(4, Math.ceil(Math.sqrt(items.length))), rowsN = Math.ceil(items.length / cols);
+      const x0 = c[0] - (cols * (S + GAP) - GAP) / 2, y0 = c[1] - (rowsN * (S + GAP) - GAP) / 2;
+      return items.map((sv, i) => sym(sv, x0 + (i % cols) * (S + GAP), y0 + Math.floor(i / cols) * (S + GAP))).join('');
+    }).join('');
+  }
+  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de servicios">${fills}${provLines}${outline}${marks}${labels}</svg>`;
 }
 
 // ── Página 5: distribución territorial de los servicios ──
@@ -893,9 +940,66 @@ function pageUPE(R, n){
   </div>${footer(R,n)}</section>`;
 }
 
+// ── Directorio de servicios ──
+function basicos(r){
+  const total = r.si.length + r.no.length + r.nd.length; if (!total) return '<span class="muted">—</span>';
+  if (r.si.length === total) return '<span class="ok">Cuenta con todos</span>';
+  const parts = [];
+  if (r.no.length) parts.push(`<span class="bad">No: ${r.no.join(', ')}</span>`);
+  if (r.nd.length === total) parts.push('<span class="muted">Sin dato</span>');
+  else if (r.nd.length) parts.push(`<span class="muted">Sin dato: ${r.nd.join(', ')}</span>`);
+  return parts.join('<br>');
+}
+function pageDirectory(R, n){
+  if (!DIR) return '';
+  const rows = DIR.filter(s => s.reg === tkey(R.region) && (!R._pk || s.pk === R._pk) && (!R._dk || s.dk === R._dk));
+  if (!rows.length) return '';
+  const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
+  rows.forEach(r => { r.cat = categoryOf(r); if (!cats.includes(r.cat)) cats.push(r.cat); });
+  rows.sort((a,b) => cats.indexOf(a.cat) - cats.indexOf(b.cat) || a.servicio.localeCompare(b.servicio,'es') || a.prov.localeCompare(b.prov,'es') || a.dist.localeCompare(b.dist,'es') || a.nombre.localeCompare(b.nombre,'es'));
+  const showUb = R._tipo !== 'Distrito';
+  const ub = r => R._tipo === 'Región' ? `${esc(titleCase(r.dist))}<br><span class="muted">${esc(titleCase(r.prov))}</span>` : esc(titleCase(r.dist));
+  const ncol = showUb ? 6 : 5;
+  let body = '', last = null;
+  rows.forEach(r => {
+    if (r.cat !== last){ last = r.cat; const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === r.cat) || {};
+      body += `<tr class="cat"><td colspan="${ncol}">${icon(cfg.icono,'ic-h')}${esc(r.cat.replace(/^En /,'').replace(/^./, c => c.toUpperCase()))} <span class="muted">(${rows.filter(x => x.cat === r.cat).length})</span></td></tr>`; }
+    body += `<tr><td><span class="sv">${symbolSvg(r.servicio)}<span>${esc(r.servicio)}</span></span></td><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${esc(r.coord)}</td><td>${basicos(r)}</td></tr>`;
+  });
+  const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
+  return `<section class="page dir">${band(R)}<div class="page-body">
+    <div class="dir-intro"><span class="h2">Directorio de servicios</span><p class="muted" style="margin-top:2mm;font-size:8.5pt">${rows.length} centros de atención en ${lugar}. "Servicios básicos" indica si el local cuenta con teléfono, internet, luz, agua y desagüe.</p></div>
+    <table class="dirt"><colgroup><col style="width:${showUb?17:20}%"><col style="width:${showUb?17:20}%">${showUb ? '<col style="width:13%">' : ''}<col style="width:${showUb?26:30}%"><col style="width:${showUb?15:17}%"><col style="width:12%"></colgroup>
+      <thead><tr><th>Servicio</th><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Coordinador/a</th><th>Servicios básicos</th></tr></thead>
+      <tbody>${body}</tbody></table>
+  </div>${footer(R,n)}</section>`;
+}
+// Reparte el directorio en tantas páginas como haga falta y renumera las páginas
+function paginate(root){
+  root.querySelectorAll('.page.dir').forEach(page => {
+    const fits = p => { const b = p.querySelector('.page-body'); return b.scrollHeight <= b.clientHeight + 1; };
+    if (fits(page)) return;
+    const tbody = page.querySelector('tbody'); const rows = [...tbody.children]; tbody.innerHTML = '';
+    const tpl = page.cloneNode(true); tpl.querySelector('.dir-intro p')?.remove();
+    let cur = page, body = tbody, lastCat = null;
+    rows.forEach(r => {
+      const isCat = r.classList.contains('cat'); if (isCat) lastCat = r;
+      body.appendChild(r);
+      if (fits(cur) || body.children.length === 1) return;
+      body.removeChild(r);
+      const orphan = body.lastElementChild && body.lastElementChild.classList.contains('cat') ? body.lastElementChild : null;
+      const np = tpl.cloneNode(true); cur.after(np); cur = np; const nb = np.querySelector('tbody');
+      if (orphan) nb.appendChild(orphan);
+      else if (!isCat && lastCat){ const c = lastCat.cloneNode(true); c.querySelector('td').insertAdjacentHTML('beforeend', ' <span class="muted">· continuación</span>'); nb.appendChild(c); }
+      nb.appendChild(r); body = nb;
+    });
+  });
+  root.querySelectorAll('.page').forEach((p, i) => { const s = p.querySelector('.foot span:last-child'); if (s) s.textContent = i + 1; });
+}
+
 function buildPages(R){
   const out = [pageCover(R)];
-  [pageAuthorities, pageProfile, pageServices, pageUPE].forEach(fn => { const h = fn(R, out.length+1); if(h) out.push(h); });
+  [pageAuthorities, pageProfile, pageServices, pageUPE, pageDirectory].forEach(fn => { const h = fn(R, out.length+1); if(h) out.push(h); });
   return out.join('');
 }
 
@@ -923,6 +1027,7 @@ async function render(){
   const R = current(); if(!R) return;
   await resolveImages(R._region); R._portada = R._region._portada; R._mapa = R._region._mapa;
   $('viewer').innerHTML = buildPages(R);
+  await document.fonts.ready; paginate($('viewer'));
   history.replaceState(null,'','#'+[$('region').value, $('prov').value, $('dist').value].filter(Boolean).map(encodeURIComponent).join('/'));
 }
 
@@ -957,7 +1062,7 @@ async function downloadAll(){
   try{
     for (let i=0;i<REGIONES.length;i++){
       const R = REGIONES[i]; status(`Generando ${i+1} de ${REGIONES.length}: ${R.region}…`); progress(i/REGIONES.length);
-      await resolveImages(R); const V = buildView(R); V._portada = R._portada; V._mapa = R._mapa; off.innerHTML = buildPages(V);
+      await resolveImages(R); const V = buildView(R); V._portada = R._portada; V._mapa = R._mapa; off.innerHTML = buildPages(V); await document.fonts.ready; paginate(off);
       const pdf = await pagesToPdf(off);
       zip.file(fileName(V), pdf.output('arraybuffer'));
     }
