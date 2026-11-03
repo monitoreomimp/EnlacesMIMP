@@ -163,7 +163,10 @@ label.btn{display:inline-flex;align-items:center}
 .dirt{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7pt;line-height:1.3}
 .dirt th{background:#EEEAF8;color:var(--violet);text-align:left;font-weight:700;padding:1.4mm 1.5mm;font-size:7pt}
 .dirt td{padding:1.3mm 1.5mm;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
-.dirt tr.cat td{background:var(--soft);font-weight:700;font-size:8pt;color:var(--ink);padding:1.6mm 1.5mm}
+.dirt tr.cat td{background:var(--violet);color:#fff;font-weight:700;font-size:8pt;padding:1.6mm 1.5mm}
+.dirt tr.cat .muted{color:#D9D3F5}
+.dirt tr.cat .ic-h{filter:brightness(0) invert(1)}
+.dirt tr.svc td{background:var(--soft);font-weight:700;font-size:7.6pt;color:var(--ink);padding:1.4mm 1.5mm}
 .dirt .sv{display:flex;gap:1.5mm;align-items:flex-start}
 .dirt .sv svg{width:2.8mm;height:2.8mm;flex-shrink:0;margin-top:.3mm}
 .dirt .ok{color:#2E7D32;font-weight:600}
@@ -252,7 +255,7 @@ const CONFIG = {
   CAMPOS: {
     gobernador: {
       gob_link:'Enlaces',
-      gob_cargo:'Título', gob_nombre:'Nombres y Apellidos', gob_nacimiento:'Fecha de Nacimiento', gob_estudios:'Estudios',
+      gob_cargo:'Título', gob_nombre:'Nombres y Apellidos', gob_foto:'Foto', vgob_foto:'Foto2', gob_nacimiento:'Fecha de Nacimiento', gob_estudios:'Estudios',
       gob_partido:'Organización Política', gob_sent_penales:'Sentencias - Delitos', gob_sent_civiles:'Sentencias - Demandas',
       vgob_cargo:'Título2', vgob_nombre:'Nombres y Apellidos2', vgob_nacimiento:'Fecha de Nacimiento2', vgob_estudios:'Estudios2',
       vgob_partido:'Organización Política2', vgob_sent_penales:'Sentencias - Delitos2', vgob_sent_civiles:'Sentencias - Demandas2'
@@ -432,14 +435,15 @@ async function loadData(){
     const rows = parseSheet(raw); const h = headerRow(rows); const head = rows[h.i].map(norm);
     const find = (...keys) => head.findIndex(x => keys.some(k => x.includes(k)));
     const iU = find('ubigeo'), iP = head.indexOf('provincia'), iD = head.indexOf('distrito'), iC = head.indexOf('centro'),
-          iM = find('modalidad'), iN = find('centro de atencion'), iA = find('direccion'), iK = find('coordin','coodin');
+          iM = find('modalidad'), iN = find('centro de atencion'), iA = find('direccion'), iK = find('coordin','coodin'),
+          iT = head.findIndex(x => /(telefono|celular|numero de contacto)/.test(x) && !x.includes('cuenta con'));
     const BAS = [['telefono','teléfono'],['internet','internet'],['luz','luz'],['agua','agua'],['desague','desagüe']]
       .map(([k, l]) => [head.findIndex(x => x.includes('cuenta con') && x.includes(k)), l]).filter(([i]) => i >= 0);
     DIR = rows.slice(h.i+1).filter(c => has(c[h.reg]) && has(c[iC])).map(c => {
       const prov = c[iP]||'', dist = c[iD]||'', mod = iM >= 0 ? (c[iM]||'') : '';
       const r = { reg: tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
         servicio: mod && norm(mod) !== norm(c[iC]) ? `${c[iC]} - ${mod}` : c[iC], cat: '',
-        nombre: iN >= 0 ? c[iN]||'' : '', dir: iA >= 0 ? (c[iA]||'').replace(/\s+/g,' ') : '', coord: iK >= 0 ? (c[iK]||'').replace(/\s+/g,' ') : '',
+        nombre: iN >= 0 ? c[iN]||'' : '', dir: iA >= 0 ? (c[iA]||'').replace(/\s+/g,' ') : '', coord: iK >= 0 ? (c[iK]||'').replace(/\s+/g,' ') : '', tel: iT >= 0 ? (c[iT]||'').replace(/\s+/g,' ') : '',
         si: [], no: [], nd: [] };
       BAS.forEach(([i, l]) => { const v = norm(c[i]); (v.startsWith('s') ? r.si : v.startsWith('n') ? r.no : r.nd).push(l); });
       return r;
@@ -646,7 +650,7 @@ function authority(R, p, defCargo){
   const foto = has(R[p+'_foto']);
   return `<div class="authority${foto?'':' no-photo'}">
     ${foto ? `<div class="auth-photo"><div class="ph" style="${bg(R[p+'_foto'])}" role="img" aria-label="${esc(R[p+'_nombre'])}"></div></div>` : ''}
-    <div><div class="auth-role">${esc(cargo.replace(/\.$/,''))} de ${esc(R.region)}</div>
+    <div><div class="auth-role">${esc(cargo.replace(/\.$/,''))}${norm(cargo).includes(norm(R.region)) ? '' : ' de ' + esc(R.region)}</div>
       <div class="auth-name">${esc(R[p+'_nombre'])}</div>
       <dl class="auth-list">${items.map(([k,v])=>`<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>
     </div></div>`;
@@ -960,17 +964,20 @@ function pageDirectory(R, n){
   const showUb = R._tipo !== 'Distrito';
   const ub = r => R._tipo === 'Región' ? `${esc(titleCase(r.dist))}<br><span class="muted">${esc(titleCase(r.prov))}</span>` : esc(titleCase(r.dist));
   const ncol = showUb ? 6 : 5;
-  let body = '', last = null;
+  const count = f => rows.filter(f).length;
+  let body = '', lastC = null, lastS = null;
   rows.forEach(r => {
-    if (r.cat !== last){ last = r.cat; const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === r.cat) || {};
-      body += `<tr class="cat"><td colspan="${ncol}">${icon(cfg.icono,'ic-h')}${esc(r.cat.replace(/^En /,'').replace(/^./, c => c.toUpperCase()))} <span class="muted">(${rows.filter(x => x.cat === r.cat).length})</span></td></tr>`; }
-    body += `<tr><td><span class="sv">${symbolSvg(r.servicio)}<span>${esc(r.servicio)}</span></span></td><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${esc(r.coord)}</td><td>${basicos(r)}</td></tr>`;
+    if (r.cat !== lastC){ lastC = r.cat; lastS = null; const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === r.cat) || {};
+      body += `<tr class="cat"><td colspan="${ncol}">${icon(cfg.icono,'ic-h')}${esc(r.cat.replace(/^En /,'').replace(/^./, c => c.toUpperCase()))} <span class="muted">(${count(x => x.cat === r.cat)})</span></td></tr>`; }
+    if (r.servicio !== lastS){ lastS = r.servicio;
+      body += `<tr class="svc"><td colspan="${ncol}"><span class="sv">${symbolSvg(r.servicio)}<span>${esc(r.servicio)} <span class="muted">(${count(x => x.cat === r.cat && x.servicio === r.servicio)})</span></span></span></td></tr>`; }
+    body += `<tr><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${r.tel ? esc(r.tel) : '<span class="muted">—</span>'}</td><td>${esc(r.coord)}</td><td>${basicos(r)}</td></tr>`;
   });
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
   return `<section class="page dir">${band(R)}<div class="page-body">
     <div class="dir-intro"><span class="h2">Directorio de servicios</span><p class="muted" style="margin-top:2mm;font-size:8.5pt">${rows.length} centros de atención en ${lugar}. "Servicios básicos" indica si el local cuenta con teléfono, internet, luz, agua y desagüe.</p></div>
-    <table class="dirt"><colgroup><col style="width:${showUb?17:20}%"><col style="width:${showUb?17:20}%">${showUb ? '<col style="width:13%">' : ''}<col style="width:${showUb?26:30}%"><col style="width:${showUb?15:17}%"><col style="width:12%"></colgroup>
-      <thead><tr><th>Servicio</th><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Coordinador/a</th><th>Servicios básicos</th></tr></thead>
+    <table class="dirt"><colgroup><col style="width:${showUb?19:22}%">${showUb ? '<col style="width:13%">' : ''}<col style="width:${showUb?27:32}%"><col style="width:${showUb?12:13}%"><col style="width:${showUb?16:18}%"><col style="width:${showUb?13:15}%"></colgroup>
+      <thead><tr><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Teléfono</th><th>Coordinador/a</th><th>Servicios básicos</th></tr></thead>
       <tbody>${body}</tbody></table>
   </div>${footer(R,n)}</section>`;
 }
@@ -981,16 +988,22 @@ function paginate(root){
     if (fits(page)) return;
     const tbody = page.querySelector('tbody'); const rows = [...tbody.children]; tbody.innerHTML = '';
     const tpl = page.cloneNode(true); tpl.querySelector('.dir-intro p')?.remove();
-    let cur = page, body = tbody, lastCat = null;
+    let cur = page, body = tbody, lastCat = null, lastSvc = null;
+    const isHead = el => el && (el.classList.contains('cat') || el.classList.contains('svc'));
     rows.forEach(r => {
-      const isCat = r.classList.contains('cat'); if (isCat) lastCat = r;
+      if (r.classList.contains('cat')){ lastCat = r; lastSvc = null; } else if (r.classList.contains('svc')) lastSvc = r;
       body.appendChild(r);
       if (fits(cur) || body.children.length === 1) return;
       body.removeChild(r);
-      const orphan = body.lastElementChild && body.lastElementChild.classList.contains('cat') ? body.lastElementChild : null;
+      // títulos que quedaron sueltos al final de la página pasan a la siguiente
+      const moved = []; while (isHead(body.lastElementChild)) moved.unshift(body.removeChild(body.lastElementChild));
       const np = tpl.cloneNode(true); cur.after(np); cur = np; const nb = np.querySelector('tbody');
-      if (orphan) nb.appendChild(orphan);
-      else if (!isCat && lastCat){ const c = lastCat.cloneNode(true); c.querySelector('td').insertAdjacentHTML('beforeend', ' <span class="muted">· continuación</span>'); nb.appendChild(c); }
+      const cont = el => { const c = el.cloneNode(true); c.querySelector('td').insertAdjacentHTML('beforeend', ' <span class="muted">· continuación</span>'); return c; };
+      if (!isHead(r) || r.classList.contains('svc')){
+        if (!moved.some(m => m.classList.contains('cat')) && lastCat) nb.appendChild(cont(lastCat));
+        if (!r.classList.contains('svc') && !moved.some(m => m.classList.contains('svc')) && lastSvc) nb.appendChild(cont(lastSvc));
+      }
+      moved.forEach(m => nb.appendChild(m));
       nb.appendChild(r); body = nb;
     });
   });
