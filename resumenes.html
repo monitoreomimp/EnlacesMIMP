@@ -176,6 +176,21 @@ label.btn{display:inline-flex;align-items:center}
 .dirt .mail{color:var(--ink-2);font-size:6.6pt;overflow-wrap:anywhere}
 .dirt .muted{font-size:inherit;color:var(--ink-3)}
 .dirt .bad{color:var(--red);font-weight:600}
+.svc-tables{display:grid;grid-template-columns:1fr 1fr;gap:5mm;align-items:start}
+.svct{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.6pt;line-height:1.25}
+.svct th{background:var(--violet);color:#fff;font-weight:700;font-size:7pt;padding:1.4mm 1.6mm;text-align:left}
+.svct th.n,.svct td.n{text-align:center}
+.svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #EDEFF2;background:#fff;vertical-align:middle}
+.svct td:first-child{border-left:1mm solid var(--c)}
+.svct tr.cat td{background:var(--c);color:#fff;font-weight:800;font-size:8pt;padding:1.6mm}
+.svct tr.cat .muted{color:#fff}
+.svct tr.cat .ic-h{filter:brightness(0) invert(1)}
+.svct tr.mod td{font-size:7pt;color:var(--ink-2);background:#F7F8FA}
+.svct tr.mod td:first-child{padding-left:5mm}
+.svct tr.sub td{font-size:7.2pt}
+.svct .sv{display:flex;gap:1.5mm;align-items:center}
+.svct .sv svg{width:2.8mm;height:2.8mm;flex-shrink:0}
+.svct .ic-h{width:4.5mm;height:4.5mm;margin-right:1.5mm}
 .red-h{font-size:10pt;color:var(--red);margin-bottom:2mm}
 hr.sep{border:none;border-top:1px solid var(--line)}
 
@@ -450,10 +465,12 @@ async function loadData(){
     const BAS = [['telefono','teléfono'],['internet','internet'],['luz','luz'],['agua','agua'],['desague','desagüe']]
       .map(([k, l]) => [head.findIndex(x => x.includes('cuenta con') && x.includes(k)), l]).filter(([i]) => i >= 0);
     DIR = rows.slice(h.i+1).filter(c => has(c[h.reg]) && has(c[iC])).map(c => {
-      const prov = c[iP]||'', dist = c[iD]||'', mod = iM >= 0 ? (c[iM]||'') : '';
+      const prov = c[iP]||'', dist = c[iD]||'';
+      let mod = iM >= 0 ? (c[iM]||'').trim() : '';
+      if (['no aplica','-','sin modalidad','na','n.a.'].includes(norm(mod)) || norm(mod) === norm(c[iC])) mod = '';
       const clean = i => i >= 0 ? (c[i]||'').replace(/\s+/g,' ').trim() : '';
       const r = { reg: tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
-        servicio: mod && norm(mod) !== norm(c[iC]) ? `${c[iC]} - ${mod}` : c[iC], cat: '',
+        servicio: mod ? `${c[iC]} - ${mod}` : c[iC], tipo: c[iC].trim(), mod, cat: '',
         nombre: clean(iN), dir: clean(iA), coord: clean(iK), tel: clean(iT), correo: clean(iE),
         at: iPA >= 0 ? num(c[iPA]) : null, periodo: clean(iPer), n: 1,
         si: [], no: [], nd: [] };
@@ -766,7 +783,7 @@ function categoryOf(s){
 }
 function groupServices(rows){
   const map = {}; const order = [];
-  rows.forEach(s => { if (!map[s.servicio]){ map[s.servicio] = { nombre:s.servicio, n:0, at:null, cat:categoryOf(s) }; order.push(s.servicio); }
+  rows.forEach(s => { if (!map[s.servicio]){ map[s.servicio] = { nombre:s.servicio, tipo:s.tipo || s.servicio, mod:s.mod || '', n:0, at:null, cat:categoryOf(s) }; order.push(s.servicio); }
     const m = map[s.servicio]; m.n += s.n; if (s.at != null) m.at = (m.at || 0) + s.at; });
   return order.map(k => map[k]);
 }
@@ -783,21 +800,40 @@ function pageServices(R, n){
   const pad = x => String(x).padStart(2,'0');
   const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
   list.forEach(s => { if (!cats.includes(s.cat)) cats.push(s.cat); });
-  const legend = items => `<div class="leg">${items.map(s => { const a = atencionDe(R, s.nombre, s);
-    return `${symbolSvg(s.nombre)}<span><b>${pad(s.n)}</b> ${esc(s.nombre)}${a ? ` (${fmtN(a.v)} ${a.l})` : ''}</span>`; }).join('')}</div>`;
-  const blocks = cats.map(cname => {
+  const CAT_COLOR = ['#C8102E','#E07B24','#B0457E','#2A8AA8','#3FA34D','#6B7280'];
+  const fmtAt = v => v == null ? '<span class="muted">—</span>' : fmtN(v);
+  const sumAt = items => items.some(s => s.at != null) ? items.reduce((a,s) => a + (s.at || 0), 0) : null;
+  const blocks = cats.map((cname, ci) => {
     const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === cname) || {};
     const items = list.filter(s => s.cat === cname);
-    if (!items.length && !cfg.vacio) return '';
-    const ats = items.map(s => atencionDe(R, s.nombre, s)).filter(Boolean);
-    const lbl = ats.length && ats.every(a => a.l === 'personas atendidas') ? 'personas atendidas' : 'total de atenciones';
-    const tot = ats.length ? `<div class="tot"><span class="big">${fmtN(ats.reduce((a,x)=>a+x.v,0))}</span><span>${lbl}</span></div>` : '';
-    return { w: Math.max(items.length, 1) + (tot ? 3 : 2), html: `<div class="block"><h3>${icon(cfg.icono,'ic-h')}${esc(cname)}</h3>${items.length ? tot + legend(items) : `<p class="muted">${esc(cfg.vacio)}</p>`}</div>` };
+    if (!items.length && !cfg.vacio) return null;
+    const color = CAT_COLOR[ci % CAT_COLOR.length];
+    const title = cname.replace(/^En /,'').replace(/^./, c => c.toUpperCase());
+    let rowsHtml = '', w = 1;
+    if (!items.length){ rowsHtml = `<tr class="sub"><td colspan="3" class="muted">${esc(cfg.vacio)}</td></tr>`; w++; }
+    // agrupa por tipo de servicio; si tiene modalidades, se muestran debajo
+    const tipos = []; items.forEach(s => { let g = tipos.find(x => x.tipo === s.tipo); if (!g){ g = { tipo: s.tipo, items: [] }; tipos.push(g); } g.items.push(s); });
+    tipos.forEach(g => {
+      const withMods = g.items.length > 1 || g.items[0].mod;
+      if (withMods){
+        rowsHtml += `<tr><td>${esc(g.tipo)}</td><td class="n">${g.items.reduce((a,s)=>a+s.n,0)}</td><td class="n">${fmtAt(sumAt(g.items))}</td></tr>`;
+        g.items.forEach(s => { rowsHtml += `<tr class="mod"><td><span class="sv">${symbolSvg(s.nombre)}<span>${esc(s.mod || 'Sin modalidad')}</span></span></td><td class="n">${s.n}</td><td class="n">${fmtAt(s.at)}</td></tr>`; });
+        w += 1 + g.items.length * .8;
+      } else {
+        const s = g.items[0];
+        rowsHtml += `<tr><td><span class="sv">${symbolSvg(s.nombre)}<span>${esc(s.nombre)}</span></span></td><td class="n">${s.n}</td><td class="n">${fmtAt(s.at)}</td></tr>`;
+        w += 1;
+      }
+    });
+    const head = `<tr class="cat"><td>${icon(cfg.icono,'ic-h')}${esc(title)}</td><td class="n">${items.reduce((a,s)=>a+s.n,0)}</td><td class="n">${fmtAt(sumAt(items))}</td></tr>`;
+    return { w, html: `<tbody style="--c:${color}">${head}${rowsHtml}</tbody>` };
   }).filter(Boolean);
-  // reparte los bloques en dos columnas de alto parecido
+  // reparte las categorías en dos tablas de alto parecido
   const total = blocks.reduce((a,b) => a + b.w, 0); let acc = 0, cut = blocks.length;
   for (let i = 0; i < blocks.length; i++){ if (acc + blocks[i].w / 2 > total / 2){ cut = Math.max(i, 1); break; } acc += blocks[i].w; }
-  const colA = blocks.slice(0, cut).map(b => b.html), colB = blocks.slice(cut).map(b => b.html);
+  const tableOf = bl => bl.length ? `<table class="svct"><colgroup><col><col style="width:15mm"><col style="width:21mm"></colgroup>
+    <thead><tr><th>Servicio MIMP</th><th class="n">N° centros</th><th class="n">Población atendida</th></tr></thead>${bl.map(b => b.html).join('')}</table>` : '';
+  const colA = tableOf(blocks.slice(0, cut)), colB = tableOf(blocks.slice(cut));
   // el mapa se achica cuando la leyenda es larga, para que todo quepa en una página
   const lines = Math.max(blocks.slice(0,cut).reduce((a,b)=>a+b.w,0), blocks.slice(cut).reduce((a,b)=>a+b.w,0));
   const mapH = lines <= 9 ? 112 : lines <= 13 ? 100 : lines <= 17 ? 86 : lines <= 21 ? 72 : 58;
@@ -809,10 +845,7 @@ function pageServices(R, n){
     ${map ? `<div class="map-cap">${R._tipo === 'Región' ? `Mapa provincial · Región ${esc(R.region)}` : `Mapa distrital · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`}</div><div class="map map-geo">${map}</div>` : (R._tipo === 'Región' && R._mapa ? `<div class="map" style="height:${mapH}mm"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : '')}
     ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito aparece resaltado dentro de la provincia de ${esc(R._prov)}.</div>` : ''}
     ${isSub(R) && !rows.some(s => s.at != null) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
-    ${list.length ? `<div class="cols divided">
-      <div class="col">${colA.join('<hr class="sep">')}</div>
-      <div class="col">${colB.join('<hr class="sep">')}</div>
-    </div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
+    ${list.length ? `<div class="svc-tables">${colA}${colB}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
   </div>${footer(R,n)}</section>`;
 }
@@ -981,7 +1014,7 @@ function pageDirectory(R, n){
   rows.sort((a,b) => cats.indexOf(a.cat) - cats.indexOf(b.cat) || a.servicio.localeCompare(b.servicio,'es') || a.prov.localeCompare(b.prov,'es') || a.dist.localeCompare(b.dist,'es') || a.nombre.localeCompare(b.nombre,'es'));
   const showUb = R._tipo !== 'Distrito';
   const ub = r => R._tipo === 'Región' ? `${esc(titleCase(r.dist))}<br><span class="muted">${esc(titleCase(r.prov))}</span>` : esc(titleCase(r.dist));
-  const ncol = showUb ? 6 : 5;
+  const ncol = showUb ? 5 : 4;
   const count = f => rows.filter(f).length;
   let body = '', lastC = null, lastS = null;
   rows.forEach(r => {
@@ -989,13 +1022,13 @@ function pageDirectory(R, n){
       body += `<tr class="cat"><td colspan="${ncol}">${icon(cfg.icono,'ic-h')}${esc(r.cat.replace(/^En /,'').replace(/^./, c => c.toUpperCase()))} <span class="muted">(${count(x => x.cat === r.cat)})</span></td></tr>`; }
     if (r.servicio !== lastS){ lastS = r.servicio;
       body += `<tr class="svc"><td colspan="${ncol}"><span class="sv">${symbolSvg(r.servicio)}<span>${esc(r.servicio)} <span class="muted">(${count(x => x.cat === r.cat && x.servicio === r.servicio)})</span></span></span></td></tr>`; }
-    body += `<tr><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${r.tel ? esc(r.tel) : (r.correo ? '' : '<span class="muted">—</span>')}${r.correo ? `${r.tel ? '<br>' : ''}<span class="mail">${esc(r.correo)}</span>` : ''}</td><td>${esc(r.coord)}</td><td>${basicos(r)}</td></tr>`;
+    body += `<tr><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${esc(r.coord)}</td><td>${r.tel ? esc(r.tel) : (r.correo ? '' : '<span class="muted">—</span>')}${r.correo ? `${r.tel ? '<br>' : ''}<span class="mail">${esc(r.correo)}</span>` : ''}</td></tr>`;
   });
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
   return `<section class="page dir">${band(R)}<div class="page-body">
-    <div class="dir-intro"><span class="h2">Directorio de servicios</span><p class="muted" style="margin-top:2mm;font-size:8.5pt">${rows.length} centros de atención en ${lugar}. "Servicios básicos" indica si el local cuenta con teléfono, internet, luz, agua y desagüe.</p></div>
-    <table class="dirt"><colgroup><col style="width:${showUb?19:22}%">${showUb ? '<col style="width:13%">' : ''}<col style="width:${showUb?27:32}%"><col style="width:${showUb?12:13}%"><col style="width:${showUb?16:18}%"><col style="width:${showUb?13:15}%"></colgroup>
-      <thead><tr><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Contacto</th><th>Coordinador/a</th><th>Servicios básicos</th></tr></thead>
+    <div class="dir-intro"><span class="h2">Directorio de servicios</span><p class="muted" style="margin-top:2mm;font-size:8.5pt">${rows.length} centros de atención en ${lugar}.</p></div>
+    <table class="dirt"><colgroup><col style="width:${showUb?20:24}%">${showUb ? '<col style="width:14%">' : ''}<col style="width:${showUb?30:36}%"><col style="width:${showUb?18:20}%"><col style="width:${showUb?18:20}%"></colgroup>
+      <thead><tr><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Coordinador/a</th><th>Contacto</th></tr></thead>
       <tbody>${body}</tbody></table>
   </div>${footer(R,n)}</section>`;
 }
