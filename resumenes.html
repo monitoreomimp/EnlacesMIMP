@@ -207,6 +207,9 @@ label.btn{display:inline-flex;align-items:center}
 .svct{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.6pt;line-height:1.25}
 .svct th{background:none;color:var(--ink-3);font-weight:700;font-size:6.8pt;text-transform:uppercase;letter-spacing:.03em;padding:1mm 1.6mm;text-align:left;border-bottom:.3mm solid var(--line)}
 .svct th.n,.svct td.n{text-align:right;font-variant-numeric:tabular-nums}
+.svct td.n{white-space:nowrap}
+.page.nat .map-row{max-height:none;min-height:0;flex:1 1 0;grid-template-columns:1.1fr 1fr}
+.page.nat .sidet{font-size:7pt}
 .svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #F0F2F5;background:#fff;vertical-align:middle}
 .svct td:first-child{border-left:.8mm solid var(--c)}
 .svct tr.cat td{background:var(--ct);color:var(--c);font-weight:800;font-size:8pt;padding:1.6mm}
@@ -293,7 +296,6 @@ const CONFIG = {
   HOJAS: {
     gobernador: BASE + '353378163',
     poblacion:  BASE + '1109551559',
-    servicios:  BASE + '806903940',
     indicadores: BASE + '1665840861',
     iconos:     BASE + '395452209',  // hoja Iconos: Indicador | Icono
     // Hoja "Servicios" (antes Directorio): una fila por centro. De aquí salen el directorio,
@@ -356,7 +358,8 @@ const CONFIG = {
     demuna:   { url: BASE + '725139976',  campo: 'demuna', extra: { campo: 'demuna_acreditadas', col: 'estado', si: v => norm(v).startsWith('acreditad') } },
     juguemos: { url: BASE + '1241773352', campo: 'juguemos', cuenta: { col: 'estado', si: v => !v || norm(v).startsWith('activ') } },
     modo:     { url: BASE + '890084221',  campo: 'ponte_modo_ninez' },
-    ciam:     { url: BASE + '522168008',  campo: 'ciam', cuenta: { col: 'gl cuenta con ciam', si: v => ['1','si','sí'].includes(norm(v)) } }
+    ciam:     { url: BASE + '522168008',  campo: 'ciam', cuenta: { col: 'gl cuenta con ciam', si: v => ['1','si','sí'].includes(norm(v)) } },
+    beneficencias: { url: BASE + '401340545', campo: 'beneficencias' }
   },
   // Conteos que, si la celda está vacía, se leen como 0
   CERO_SI_VACIO: ['feminicidio','alc_prov_m','alc_prov_h','alc_dist_m','alc_dist_h'],
@@ -463,8 +466,23 @@ let SERV = [], DIR = null, LISTAS = {}, PK2REG = {};
 
 // Lee CSV o TSV y devuelve filas de celdas
 function parseSheet(raw){
-  const lines = raw.replace(/\r\n?/g,'\n').split('\n');
-  const tsv = lines.some(l => l.includes('\t'));
+  raw = raw.replace(/\r\n?/g,'\n');
+  if (!raw.split('\n', 3).some(l => l.includes('\t'))){
+    // CSV: respeta comillas (celdas con comas o saltos de línea)
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < raw.length; i++){
+      const ch = raw[i];
+      if (q){ if (ch === '"'){ if (raw[i+1] === '"'){ cell += '"'; i++; } else q = false; } else cell += ch === '\n' ? ' ' : ch; }
+      else if (ch === '"') q = true;
+      else if (ch === ','){ row.push(cell.trim()); cell = ''; }
+      else if (ch === '\n'){ row.push(cell.trim()); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell || row.length){ row.push(cell.trim()); rows.push(row); }
+    return rows;
+  }
+  const lines = raw.split('\n');
+  const tsv = true;
   const split = l => tsv ? l.split('\t') : (l.match(/("([^"]|"")*"|[^,]*)(,|$)/g) || []).slice(0,-1).map(x => x.replace(/,$/,'').replace(/^"|"$/g,'').replace(/""/g,'"'));
   return lines.map(l => split(l).map(v => (v||'').trim()));
 }
@@ -643,6 +661,8 @@ function buildView(Rg, pk, dk){
     V._tipo = D ? 'Distrito' : 'Provincia'; V._nombre = D ? D.nombre : P.nombre; V._prov = P.nombre;
     V._nDistProv = Rg._nDistOf[pk] ?? P.distOrder.length; V._pk = pk; V._dk = dk || '';
   }
+  // OREDIS: una por región (no hay dato por provincia o distrito)
+  V.oredis = '1';
   // servicios que promueve el MIMP contados en el territorio elegido
   const rk = tkey(Rg.region);
   Object.entries(CONFIG.LISTAS || {}).forEach(([key, L]) => {
@@ -664,6 +684,7 @@ function buildNational(){
   if (DIR){ const p = DIR.find(d => d.periodo); if (p) V.periodo = p.periodo; }
   Object.entries(CONFIG.LISTAS || {}).forEach(([key, L]) => { const list = LISTAS[key]; if (!list) return;
     V[L.campo] = String(list.filter(r => r.ok).length); if (L.extra) V[L.extra.campo] = String(list.filter(r => r.extra).length); });
+  V.oredis = String(REGIONES.length);
   Object.assign(V, { region: 'Perú', _region: Rg, _tipo: 'País', _nombre: 'Perú', _local: null });
   return V;
 }
@@ -968,8 +989,17 @@ function pageServices(R, n){
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
   const cap = isNat(R) ? 'Centros por región · Perú' : R._tipo === 'Región' ? `Centros por ${byProvView(R) ? 'provincia' : 'distrito'} · Región ${esc(R.region)}` : `Centros por distrito · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`;
 
+  const head = `<div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>${kpis}</div>`;
+  const tables = list.length ? `<div class="svc-tables">${tableOf(blocks.slice(0, cut))}${tableOf(blocks.slice(cut))}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`;
+  const notes = `${empty.length ? `<p class="empty-cats"><b>Sin centros:</b> ${esc(empty.join(', '))}.</p>` : ''}
+    ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}`;
+  // nacional: el mapa con su cuadro en una página y las tablas en la siguiente
+  if (isNat(R)) return `<section class="page nat">${band(R)}<div class="page-body">${head}
+      ${map ? `<div class="map-cap"><span>${cap}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
+    </div>${footer(R,n)}</section>
+    <section class="page">${band(R)}<div class="page-body"><div><span class="h2">Servicios MIMP implementados por tipo${has(R.periodo)?' (*)':''}</span></div>${tables}${notes}</div>${footer(R,n+1)}</section>`;
   return `<section class="page">${band(R)}<div class="page-body">
-    <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>${kpis}</div>
+    ${head}
     ${map ? `<div class="map-cap"><span>${cap}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
     ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito de ${esc(R._nombre)} aparece con borde oscuro dentro de la provincia de ${esc(R._prov)}.</div>` : ''}
     ${isSub(R) && !rows.some(s => s.at != null) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
