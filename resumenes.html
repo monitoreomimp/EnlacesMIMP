@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Resumen Estadístico Regional · MIMP</title>
+<title>Resúmenes estadísticos regionales · MIMP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -209,7 +209,7 @@ label.btn{display:inline-flex;align-items:center}
 .svct th.n,.svct td.n{text-align:right;font-variant-numeric:tabular-nums}
 .svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #F0F2F5;background:#fff;vertical-align:middle}
 .svct td:first-child{border-left:.8mm solid var(--c)}
-.svct tr.cat td{background:color-mix(in srgb, var(--c) 10%, #fff);color:var(--c);font-weight:800;font-size:8pt;padding:1.6mm}
+.svct tr.cat td{background:var(--ct);color:var(--c);font-weight:800;font-size:8pt;padding:1.6mm}
 .svct tr.cat .muted{color:inherit}
 .svct tr.cat .ic-h{opacity:.9}
 .svct tr.mod td{font-size:7pt;color:var(--ink-2);background:#FAFBFC}
@@ -459,7 +459,7 @@ function symbolSvg(name){
 }
 // Clave para cruzar territorios aunque cambien tildes, mayúsculas o guiones
 const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
-let SERV = [], DIR = null, LISTAS = {};
+let SERV = [], DIR = null, LISTAS = {}, PK2REG = {};
 
 // Lee CSV o TSV y devuelve filas de celdas
 function parseSheet(raw){
@@ -608,7 +608,7 @@ async function loadData(){
   });
   await iconsP; await servP; await dirP; await listsP;
   // a qué región pertenece cada provincia (por ubigeo); así "LIMA" se reparte entre Lima Metropolitana y Lima Provincias
-  const PK2REG = {}; Object.entries(byKey).forEach(([k, R]) => R._subOrder.forEach(pk => { if (/^\d{4}$/.test(pk)) PK2REG[pk] = k; }));
+  PK2REG = {}; Object.entries(byKey).forEach(([k, R]) => R._subOrder.forEach(pk => { if (/^\d{4}$/.test(pk)) PK2REG[pk] = k; }));
   Object.values(LISTAS).forEach(list => (list || []).forEach(r => { r.reg = PK2REG[r.pk] || tkey(r.dep); }));
   if (DIR && DIR.length) SERV = DIR;   // los servicios implementados salen de la misma hoja
   // Territorios que solo aparecen en Serv_impl se agregan a los filtros (sin datos de población)
@@ -654,8 +654,22 @@ function buildView(Rg, pk, dk){
   });
   return V;
 }
-const isSub = R => R._tipo !== 'Región';
-const fullName = R => `${R._tipo} ${R._nombre}`;
+// ── Vista nacional: suma todas las regiones; indicadores de la fila "Nacional" ──
+function buildNational(){
+  const Rg = { region: 'Perú', _subs: {}, _subOrder: [], _nat: true,
+    _nReg: REGIONES.length, _nProv: REGIONES.reduce((a,r) => a + (r._nProv||0), 0), _nDist: REGIONES.reduce((a,r) => a + (r._nDist||0), 0) };
+  const V = Object.assign({}, NACIONAL);
+  Object.keys(V).forEach(k => { if (k.startsWith('pob_') || k.startsWith('pct_')) delete V[k]; });
+  POB_SUM.forEach(k => { const vals = REGIONES.map(r => num(r[k])).filter(v => v != null); if (vals.length) V[k] = String(vals.reduce((a,b)=>a+b,0)); });
+  if (DIR){ const p = DIR.find(d => d.periodo); if (p) V.periodo = p.periodo; }
+  Object.entries(CONFIG.LISTAS || {}).forEach(([key, L]) => { const list = LISTAS[key]; if (!list) return;
+    V[L.campo] = String(list.filter(r => r.ok).length); if (L.extra) V[L.extra.campo] = String(list.filter(r => r.extra).length); });
+  Object.assign(V, { region: 'Perú', _region: Rg, _tipo: 'País', _nombre: 'Perú', _local: null });
+  return V;
+}
+const isSub = R => R._tipo === 'Provincia' || R._tipo === 'Distrito';
+const isNat = R => R._tipo === 'País';
+const fullName = R => isNat(R) ? R._nombre : `${R._tipo} ${R._nombre}`;
 const crumb = R => R._tipo === 'Distrito' ? `Provincia ${R._prov} · Región ${R.region}` : R._tipo === 'Provincia' ? `Región ${R.region}` : '';
 function lvlNote(R, fields){
   if (!isSub(R) || fields.some(f => R._local.has(f))) return '';
@@ -749,6 +763,7 @@ function authority(R, p, defCargo){
     </div></div>`;
 }
 function pageAuthorities(R, n){
+  if (isNat(R)) return '';
   const body = authority(R,'gob','Gobernador Regional') + authority(R,'vgob','Vicegobernador Regional');
   if(!body) return '';
   return `<section class="page">${band(R)}<div class="page-body"><div><span class="h2">Autoridades regionales</span></div>${isSub(R) ? `<div class="lvl-note">Corresponden al Gobierno Regional de ${esc(R.region)}</div>` : ''}${body}
@@ -760,6 +775,7 @@ function territorio(R){
   const Rg = R._region;
   const counts = Rg._nProv || Rg._nDist ? `<b>${fmtN(Rg._nProv)} provincias</b> y <b>${fmtN(Rg._nDist)} distritos</b>` : '';
   const head = txt => `<h2><span class="pt">Perfil territorial:</span> ${txt}</h2>`;
+  if (isNat(R)) return head(`El Perú tiene <b>${fmtN(Rg._nReg)} regiones</b>, <b>${fmtN(Rg._nProv)} provincias</b> y <b>${fmtN(Rg._nDist)} distritos</b>`);
   if (R._tipo === 'Región')
     return head(counts ? `${esc(Rg.region)} tiene ${counts}` : `${esc(Rg.region)}, información disponible solo a nivel regional`);
   const top = R._tipo === 'Provincia'
@@ -768,6 +784,11 @@ function territorio(R){
   return head(top) + `<p class="reg">(Región ${esc(Rg.region)}${counts ? ` · ${counts}` : ''})</p>`;
 }
 function pageProfile(R, n){
+  const html = pageProfileBody(R, n);
+  const propia = /Fuente:[^<]*1\//.test(html) ? '<div class="note">1/ Elaboración propia.</div>' : '';
+  return html + `${propia}</div>${footer(R,n)}</section>`;
+}
+function pageProfileBody(R, n){
   const T = num(R.pob_total);
   const hasInd = ['trab_inf_mujer','trab_inf_hombre','jefas_hogar','analf_mujer','analf_hombre','alcaldesas','actividades'].some(k => has(R[k]));
   const groups = [
@@ -819,7 +840,7 @@ function pageProfile(R, n){
       <div class="col">
         ${prob.length ? `<div><span class="h2">Problemática social vinculada al sector</span></div>${lvlNote(R, prob.map(p=>p[0]))}
         <div class="prob-grid">${prob.map(([k,l,nac,t,ic]) => `<div class="prob">${withIcon(ic, `<div class="k">${t==='n'?nTxt(R[k]):fmtP(R[k])}</div>
-          <div class="lbl">${l}</div>${k==='violencia_mujer' && [R.viol_psicologica,R.viol_fisica,R.viol_sexual].some(has) ? `<div class="src">${[['Psicológica',R.viol_psicologica],['Física',R.viol_fisica],['Sexual',R.viol_sexual]].filter(x=>has(x[1])).map(([a,b])=>`${a} ${fmtP(b)}`).join(' · ')}</div>`:''}${nac && has(NACIONAL[k]) ? `<div class="nac">Nacional: ${fmtP(NACIONAL[k])}</div>`:''}${srcLine(k)}`)}</div>`).join('')}</div>
+          <div class="lbl">${l}</div>${k==='violencia_mujer' && [R.viol_psicologica,R.viol_fisica,R.viol_sexual].some(has) ? `<div class="src">${[['Psicológica',R.viol_psicologica],['Física',R.viol_fisica],['Sexual',R.viol_sexual]].filter(x=>has(x[1])).map(([a,b])=>`${a} ${fmtP(b)}`).join(' · ')}</div>`:''}${nac && !isNat(R) && has(NACIONAL[k]) ? `<div class="nac">Nacional: ${fmtP(NACIONAL[k])}</div>`:''}${srcLine(k)}`)}</div>`).join('')}</div>
         <div class="note">(**) Violencia familiar contra la mujer de 15 a 49 años de edad, ejercida alguna vez por el esposo o compañero.</div>` : ''}
         ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>
         ${svc.map(([t,c,items]) => `<div class="svc-group" style="--c:${c}"><div class="svc-head">${icon(ICON_SVC[t],'ic-h')}${t}</div>
@@ -828,12 +849,13 @@ function pageProfile(R, n){
             ? `<div class="svc-item"><span class="n">–</span><span class="t none">${none}${reg}</span></div>`
             : `<div class="svc-item"><span class="n">${nTxt(R[k])}</span><span class="t">${l}${s?`<small>${s}</small>`:''}${reg}</span></div>`; }).join('')}</div>`).join('')}` : ''}
       </div>
-    </div></div>${footer(R,n)}</section>`;
+    </div>`.replace(/^/, '');
 }
 
 // ── Página 4: servicios implementados ──
 function servRows(R){
   if (!SERV) return null;
+  if (isNat(R)) return SERV;
   const rk = tkey(R.region);
   return SERV.filter(s => s.reg === rk && (!R._pk || s.pk === R._pk) && (!R._dk || s.dk === R._dk));
 }
@@ -861,7 +883,12 @@ const singleProv = R => { if (R._tipo !== 'Región') return ''; const p = R._reg
 const byProvView = R => R._tipo === 'Región' && !singleProv(R);
 const viewPk = R => R._pk || singleProv(R);
 // Centros por unidad territorial (provincia en la vista regional, distrito en las demás)
+function regionName(k){ const r = REGIONES.find(x => tkey(x.region) === k); return r ? r.region : titleCase(k); }
 function unitStats(R){
+  if (isNat(R)){
+    const u = {}; (SERV || []).forEach(s => { const k = s.reg; if (!u[k]) u[k] = { key:k, nombre: regionName(k), n:0, svc:{} }; u[k].n += s.n; u[k].svc[s.servicio] = (u[k].svc[s.servicio] || 0) + s.n; });
+    return Object.values(u).sort((a,b) => b.n - a.n || a.nombre.localeCompare(b.nombre,'es'));
+  }
   const rows = servRows(R === null ? null : { ...R, _dk: '' }) || [];   // en el distrito se muestra toda su provincia
   const byProv = byProvView(R), Rg = R._region, pkV = viewPk(R);
   const units = {}; const order = [];
@@ -871,6 +898,8 @@ function unitStats(R){
     const u = units[k]; u.n += s.n; u.svc[s.servicio] = (u.svc[s.servicio] || 0) + s.n; });
   return order.map(k => units[k]).sort((a,b) => b.n - a.n || a.nombre.localeCompare(b.nombre,'es'));
 }
+// mezcla un color con blanco (html2canvas no soporta color-mix)
+const tint = (hex, a) => '#' + [1,3,5].map(i => Math.round(parseInt(hex.slice(i,i+2),16) * a + 255 * (1 - a)).toString(16).padStart(2,'0')).join('');
 const BLUES = ['#DCEAF7','#B3D1EE','#7FB0DF','#4A88C9','#1F5FA8'];
 const blueOf = (v, max) => !v ? '#EEF0F3' : BLUES[Math.min(BLUES.length - 1, Math.ceil(v / Math.max(max,1) * BLUES.length) - 1)];
 
@@ -915,7 +944,7 @@ function pageServices(R, n){
       }
     });
     const head = `<tr class="cat"><td>${icon(cfg.icono,'ic-h')}${esc(title)}</td><td class="n">${items.reduce((a,s)=>a+s.n,0)}</td><td class="n">${fmtAt(sumAt(items))}</td><td class="n">${fmtAt(sumAct(items))}</td></tr>`;
-    return { w, html: `<tbody style="--c:${color}">${head}${rowsHtml}</tbody>` };
+    return { w, html: `<tbody style="--c:${color};--ct:${tint(color, .1)}">${head}${rowsHtml}</tbody>` };
   }).filter(Boolean);
   const total = blocks.reduce((a,b) => a + b.w, 0); let acc = 0, cut = blocks.length;
   for (let i = 0; i < blocks.length; i++){ if (acc + blocks[i].w / 2 > total / 2){ cut = Math.max(i, 1); break; } acc += blocks[i].w; }
@@ -932,12 +961,12 @@ function pageServices(R, n){
   // mapa + cuadro de centros por provincia o distrito
   const units = unitStats(R);
   const map = mapSvg(R, units);
-  const unitName = byProvView(R) ? 'Provincia' : 'Distrito';
+  const unitName = isNat(R) ? 'Región' : byProvView(R) ? 'Provincia' : 'Distrito';
   const sideRows = units.map(u => `<tr${R._tipo === 'Distrito' && u.key === R._dk ? ' class="hi"' : ''}><td>${esc(u.nombre)}</td><td class="n"><span class="dot" style="background:${blueOf(u.n, units[0] ? units[0].n : 1)}"></span>${u.n}</td>
       <td class="chips">${Object.entries(u.svc).map(([sv, k]) => `<span class="chip">${symbolSvg(sv)}${k}</span>`).join('')}</td></tr>`).join('');
   const side = units.length ? `<div class="side${units.length > 18 ? ' dense' : ''}"><table class="sidet"><thead><tr><th>${unitName}</th><th class="n">Centros</th><th>Servicios</th></tr></thead><tbody>${sideRows}</tbody></table></div>` : '';
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
-  const cap = R._tipo === 'Región' ? `Centros por ${byProvView(R) ? 'provincia' : 'distrito'} · Región ${esc(R.region)}` : `Centros por distrito · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`;
+  const cap = isNat(R) ? 'Centros por región · Perú' : R._tipo === 'Región' ? `Centros por ${byProvView(R) ? 'provincia' : 'distrito'} · Región ${esc(R.region)}` : `Centros por distrito · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`;
 
   return `<section class="page">${band(R)}<div class="page-body">
     <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>${kpis}</div>
@@ -977,8 +1006,22 @@ async function loadMap(){
   }catch(e){ TOPO = null; MAP_ERR = e.message; console.warn('Mapa:', e); }
 }
 const titleCase = s => (s||'').toLowerCase().replace(/(^|[\s(-])([a-záéíóúñü])/g, (m,a,b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y|El)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
+function mapNational(units){
+  const count = {}; units.forEach(u => count[u.key] = u.n);
+  const max = Math.max(1, ...units.map(u => u.n));
+  const W = 600, H = 760, coll = { type:'GeometryCollection', geometries: GEOMS };
+  const proj = d3.geoMercator().fitExtent([[10,10],[W-10,H-10]], topojson.feature(TOPO, coll));
+  const path = d3.geoPath(proj);
+  const groups = {}; GEOMS.forEach(g => { const pk = String(g.properties.IDPROV); const k = PK2REG[pk] || ('d' + pk.slice(0,2)); (groups[k] = groups[k] || []).push(g); });
+  const zones = Object.entries(groups).map(([k, g]) => ({ key:k, geo: topojson.merge(TOPO, g), name: regionName(k) }));
+  const fills = zones.map(z => `<path d="${path(z.geo)}" fill="${blueOf(count[z.key] || 0, max)}" stroke="#FFFFFF" stroke-width="1.6" stroke-linejoin="round"/>`).join('');
+  const marks = zones.map(z => { const [x, y] = path.centroid(z.geo); const v = count[z.key] || 0; if (isNaN(x) || !v) return '';
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${v > 99 ? 15 : 12}" fill="#FFFFFF" stroke="#1F5FA8" stroke-width="1.8"/><text x="${x.toFixed(1)}" y="${(y + 4.5).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${v > 99 ? 11.5 : 12.5}" font-weight="800" fill="#1F5FA8">${v}</text>`; }).join('');
+  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros por región">${fills}${marks}</svg>`;
+}
 function mapSvg(R, units){
   if (!TOPO) return '';
+  if (isNat(R)) return mapNational(units || unitStats(R));
   const Rg = R._region;
   const regionView = byProvView(R), pkV = viewPk(R);
   const provs = new Set(regionView ? Rg._subOrder.filter(k => /^\d{4}$/.test(k)) : [pkV]);
@@ -1086,7 +1129,7 @@ function basicos(r){
   return parts.join('<br>');
 }
 function pageDirectory(R, n){
-  if (!DIR) return '';
+  if (!DIR || isNat(R)) return '';
   const rows = DIR.filter(s => s.reg === tkey(R.region) && (!R._pk || s.pk === R._pk) && (!R._dk || s.dk === R._dk));
   if (!rows.length) return '';
   const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
@@ -1148,8 +1191,9 @@ function buildPages(R){
 }
 
 // ── Vista ──
-const curRegion = () => REGIONES.find(r => slug(r.region) === $('region').value) || REGIONES[0];
+const curRegion = () => $('region').value === 'nacional' ? null : (REGIONES.find(r => slug(r.region) === $('region').value) || REGIONES[0]);
 function current(){
+  if ($('region').value === 'nacional') return buildNational();
   const Rg = curRegion(); if (!Rg) return null;
   const pk = Rg._subs[$('prov').value] ? $('prov').value : '';
   const dk = pk && Rg._subs[pk].dists[$('dist').value] ? $('dist').value : '';
@@ -1158,7 +1202,7 @@ function current(){
 function fillProv(sel){
   const Rg = curRegion(); const p = $('prov');
   const subs = Rg ? Rg._subOrder : [];
-  p.innerHTML = `<option value="">${subs.length ? 'Toda la región' : 'Sin datos provinciales'}</option>` + subs.map(pk => `<option value="${esc(pk)}">${esc(Rg._subs[pk].nombre)}</option>`).join('');
+  p.innerHTML = `<option value="">${!Rg ? 'Provincia' : subs.length ? 'Toda la región' : 'Sin datos provinciales'}</option>` + subs.map(pk => `<option value="${esc(pk)}">${esc(Rg._subs[pk].nombre)}</option>`).join('');
   p.disabled = !subs.length; p.value = sel && Rg && Rg._subs[sel] ? sel : '';
 }
 function fillDist(sel){
@@ -1230,9 +1274,9 @@ async function downloadAll(){
     const [failed] = await Promise.all([loadData(), loadMap()]);
     if(!REGIONES.length) throw new Error('ninguna hoja respondió con regiones');
     const sel = $('region');
-    sel.innerHTML = REGIONES.map(r => `<option value="${slug(r.region)}">${esc(r.region)}</option>`).join('');
+    sel.innerHTML = '<option value="nacional">Perú (nacional)</option>' + REGIONES.map(r => `<option value="${slug(r.region)}">${esc(r.region)}</option>`).join('');
     const [hr, hp, hd] = location.hash.slice(1).split('/').map(decodeURIComponent);
-    if (REGIONES.some(r => slug(r.region)===hr)) sel.value = hr;
+    if (hr === 'nacional' || REGIONES.some(r => slug(r.region)===hr)) sel.value = hr; else sel.value = REGIONES.length ? slug(REGIONES[0].region) : 'nacional';
     busy(false); fillProv(hp); fillDist(hd); await render();
     const msgs = [];
     if (failed.length) msgs.push('No se pudo leer la hoja: ' + failed.join(', ') + '. El resumen se muestra sin esos datos.');
