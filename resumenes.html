@@ -130,6 +130,7 @@ label.btn{display:inline-flex;align-items:center}
 .svc-item{display:grid;grid-template-columns:11mm 1fr;align-items:center;gap:2mm}
 .svc-item .n{font-size:15pt;font-weight:800;color:var(--c,var(--amber));text-align:center}
 .svc-item .t{font-size:9pt;font-weight:700;line-height:1.25}
+.svc-item .t .reg-only{display:block;font-weight:500;font-size:7pt;color:#9A7400}
 .svc-item .t.none{font-weight:400;color:var(--ink-2)}
 .svc-item .t small{display:block;font-weight:400;font-size:8pt}
 
@@ -348,6 +349,15 @@ const CONFIG = {
     { servicio:'centro emergencia mujer y familia - 24 horas', campo:'cem24_at' },
     { servicio:'hogares de refugio temporal', campo:'hrt_at', etiqueta:'personas atendidas' }
   ],
+  // Servicios que promueve el MIMP, con una fila por distrito (se cuentan por ubigeo).
+  //  campo: dato del resumen que alimenta · cuenta: qué filas se cuentan
+  //  extra: dato adicional (por ejemplo, cuántas DEMUNA están acreditadas)
+  LISTAS: {
+    demuna:   { url: BASE + '725139976',  campo: 'demuna', extra: { campo: 'demuna_acreditadas', col: 'estado', si: v => norm(v).startsWith('acreditad') } },
+    juguemos: { url: BASE + '1241773352', campo: 'juguemos', cuenta: { col: 'estado', si: v => !v || norm(v).startsWith('activ') } },
+    modo:     { url: BASE + '890084221',  campo: 'ponte_modo_ninez' },
+    ciam:     { url: BASE + '522168008',  campo: 'ciam', cuenta: { col: 'gl cuenta con ciam', si: v => ['1','si','sí'].includes(norm(v)) } }
+  },
   // Conteos que, si la celda está vacía, se leen como 0
   CERO_SI_VACIO: ['feminicidio','alc_prov_m','alc_prov_h','alc_dist_m','alc_dist_h'],
   FUENTES: {
@@ -449,7 +459,7 @@ function symbolSvg(name){
 }
 // Clave para cruzar territorios aunque cambien tildes, mayúsculas o guiones
 const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
-let SERV = [], DIR = null;
+let SERV = [], DIR = null, LISTAS = {};
 
 // Lee CSV o TSV y devuelve filas de celdas
 function parseSheet(raw){
@@ -517,6 +527,17 @@ async function loadData(){
                servicio: mod ? `${centro} - ${mod}` : centro, cat: iK >= 0 ? (c[iK]||'') : '', n: num(c[iN]) ?? 1 };
     }).filter(s => s.reg && s.servicio);
   }).catch(() => { SERV = null; }) : Promise.resolve();
+  // listas distritales (DEMUNA, Juguemos, Modo Niñez, CIAM)
+  LISTAS = {};
+  const listsP = Promise.all(Object.entries(CONFIG.LISTAS || {}).map(([key, L]) => fetchText(L.url).then(raw => {
+    const rows = parseSheet(raw).filter(r => r.some(Boolean)); const head = (rows[0] || []).map(norm);
+    const iU = head.indexOf('ubigeo'), iD = head.findIndex(x => x.startsWith('depart') || x === 'region' || x === 'dpto');
+    const colOf = name => head.findIndex(x => x.startsWith(norm(name)));
+    const iC = L.cuenta ? colOf(L.cuenta.col) : -1, iX = L.extra ? colOf(L.extra.col) : -1;
+    LISTAS[key] = rows.slice(1).map(c => { const ub = ubigeo(c[iU]); return ub.length === 6 ? {
+        pk: ub.slice(0,4), dk: ub, dep: iD >= 0 ? c[iD] : '',
+        ok: !L.cuenta || iC < 0 || L.cuenta.si(c[iC] || ''), extra: !!(L.extra && iX >= 0 && L.extra.si(c[iX] || '')) } : null; }).filter(Boolean);
+  }).catch(() => { LISTAS[key] = null; })));
   const iconsP = CONFIG.HOJAS.iconos ? fetchText(CONFIG.HOJAS.iconos).then(raw => {
     ICONS = {};
     parseSheet(raw).slice(1).forEach(([k, f]) => {
@@ -585,7 +606,10 @@ async function loadData(){
       R._alc_detalle = `${alc[0]||0} provincial${(alc[0]||0)===1?'':'es'} y ${alc[2]||0} distrital${(alc[2]||0)===1?'':'es'}, de ${alc.reduce((a,v)=>a+(v||0),0)} alcaldías`;
     }
   });
-  await iconsP; await servP; await dirP;
+  await iconsP; await servP; await dirP; await listsP;
+  // a qué región pertenece cada provincia (por ubigeo); así "LIMA" se reparte entre Lima Metropolitana y Lima Provincias
+  const PK2REG = {}; Object.entries(byKey).forEach(([k, R]) => R._subOrder.forEach(pk => { if (/^\d{4}$/.test(pk)) PK2REG[pk] = k; }));
+  Object.values(LISTAS).forEach(list => (list || []).forEach(r => { r.reg = PK2REG[r.pk] || tkey(r.dep); }));
   if (DIR && DIR.length) SERV = DIR;   // los servicios implementados salen de la misma hoja
   // Territorios que solo aparecen en Serv_impl se agregan a los filtros (sin datos de población)
   (SERV || []).forEach(s => {
@@ -619,6 +643,15 @@ function buildView(Rg, pk, dk){
     V._tipo = D ? 'Distrito' : 'Provincia'; V._nombre = D ? D.nombre : P.nombre; V._prov = P.nombre;
     V._nDistProv = Rg._nDistOf[pk] ?? P.distOrder.length; V._pk = pk; V._dk = dk || '';
   }
+  // servicios que promueve el MIMP contados en el territorio elegido
+  const rk = tkey(Rg.region);
+  Object.entries(CONFIG.LISTAS || {}).forEach(([key, L]) => {
+    const list = LISTAS[key]; if (!list) return;
+    const rows = list.filter(r => r.reg === rk && (!V._pk || r.pk === V._pk) && (!V._dk || r.dk === V._dk));
+    V[L.campo] = String(rows.filter(r => r.ok).length);
+    if (L.extra) V[L.extra.campo] = String(rows.filter(r => r.extra).length);
+    if (V._local){ V._local.add(L.campo); if (L.extra) V._local.add(L.extra.campo); }
+  });
   return V;
 }
 const isSub = R => R._tipo !== 'Región';
@@ -753,7 +786,7 @@ function pageProfile(R, n){
   ].filter(x => has(R[x[0]]));
   const svc = [
     ['Niñas, niños y adolescentes','var(--amber)',[
-      ['demuna','Defensorías Municipales del Niño y el Adolescente (DEMUNA)', has(R.demuna_acreditadas)?`Existen ${nTxt(R.demuna_acreditadas)} DEMUNA acreditadas`:'', 'No hay Defensorías Municipales del Niño y el Adolescente (DEMUNA)'],
+      ['demuna','Defensorías Municipales del Niño y el Adolescente (DEMUNA)', num(R.demuna_acreditadas) > 0 ? (num(R.demuna_acreditadas) === 1 ? 'Existe 1 DEMUNA acreditada' : `Existen ${nTxt(R.demuna_acreditadas)} DEMUNA acreditadas`) : '', 'No hay Defensorías Municipales del Niño y el Adolescente (DEMUNA)'],
       ['juguemos','Juguemos en DEMUNA','', 'No hay Juguemos en DEMUNA'],
       ['ponte_modo_ninez','Estrategias Ponte en Modo Niñez en DEMUNA operativas','', 'No hay estrategias Ponte en Modo Niñez operativas']]],
     ['Personas con discapacidad','#2FA4E7',[['oredis','Oficina Regional de Atención a las Personas con Discapacidad (OREDIS)','', 'No hay Oficina Regional de Atención a las Personas con Discapacidad (OREDIS)']]],
@@ -788,11 +821,12 @@ function pageProfile(R, n){
         <div class="prob-grid">${prob.map(([k,l,nac,t,ic]) => `<div class="prob">${withIcon(ic, `<div class="k">${t==='n'?nTxt(R[k]):fmtP(R[k])}</div>
           <div class="lbl">${l}</div>${k==='violencia_mujer' && [R.viol_psicologica,R.viol_fisica,R.viol_sexual].some(has) ? `<div class="src">${[['Psicológica',R.viol_psicologica],['Física',R.viol_fisica],['Sexual',R.viol_sexual]].filter(x=>has(x[1])).map(([a,b])=>`${a} ${fmtP(b)}`).join(' · ')}</div>`:''}${nac && has(NACIONAL[k]) ? `<div class="nac">Nacional: ${fmtP(NACIONAL[k])}</div>`:''}${srcLine(k)}`)}</div>`).join('')}</div>
         <div class="note">(**) Violencia familiar contra la mujer de 15 a 49 años de edad, ejercida alguna vez por el esposo o compañero.</div>` : ''}
-        ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>${lvlNote(R, ['demuna','juguemos','ponte_modo_ninez','oredis','ciam','beneficencias'])}
+        ${svc.length ? `<div><span class="h2">Servicios que promueve el MIMP</span></div>
         ${svc.map(([t,c,items]) => `<div class="svc-group" style="--c:${c}"><div class="svc-head">${icon(ICON_SVC[t],'ic-h')}${t}</div>
-          ${items.map(([k,l,s,none]) => !has(R[k]) || num(R[k]) === 0
-            ? `<div class="svc-item"><span class="n">–</span><span class="t none">${none}</span></div>`
-            : `<div class="svc-item"><span class="n">${nTxt(R[k])}</span><span class="t">${l}${s?`<small>${s}</small>`:''}</span></div>`).join('')}</div>`).join('')}` : ''}
+          ${items.map(([k,l,s,none]) => { const reg = isSub(R) && !R._local.has(k) ? `<small class="reg-only">Dato regional (${esc(R.region)})</small>` : '';
+            return !has(R[k]) || num(R[k]) === 0
+            ? `<div class="svc-item"><span class="n">–</span><span class="t none">${none}${reg}</span></div>`
+            : `<div class="svc-item"><span class="n">${nTxt(R[k])}</span><span class="t">${l}${s?`<small>${s}</small>`:''}${reg}</span></div>`; }).join('')}</div>`).join('')}` : ''}
       </div>
     </div></div>${footer(R,n)}</section>`;
 }
