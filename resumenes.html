@@ -176,16 +176,38 @@ label.btn{display:inline-flex;align-items:center}
 .dirt .mail{color:var(--ink-2);font-size:6.6pt;overflow-wrap:anywhere}
 .dirt .muted{font-size:inherit;color:var(--ink-3)}
 .dirt .bad{color:var(--red);font-weight:600}
-.svc-tables{display:grid;grid-template-columns:1fr 1fr;gap:5mm;align-items:start}
+.svc-tables{display:grid;grid-template-columns:1fr 1fr;gap:6mm;align-items:start}
+.svc-top{align-items:center}
+.kpis{display:flex;gap:3mm}
+.kpi{background:#EEF4FB;border-radius:2mm;padding:1.8mm 3.5mm;min-width:24mm;text-align:right}
+.kpi b{display:block;font-size:15pt;font-weight:800;color:#1F5FA8;line-height:1.05;font-variant-numeric:tabular-nums}
+.kpi span{font-size:7pt;color:var(--ink-2)}
+.map-row{display:grid;grid-template-columns:1.15fr 1fr;gap:5mm;align-items:start;flex:1 1 0;min-height:70mm;max-height:118mm}
+.map-row .map-geo{height:100%;min-height:0;max-height:none}
+.side{max-height:100%;overflow:hidden}
+.sidet{width:100%;border-collapse:collapse;font-size:7.4pt;line-height:1.25}
+.sidet th{text-align:left;font-size:6.8pt;font-weight:700;color:var(--ink-3);text-transform:uppercase;letter-spacing:.03em;padding:1mm 1.4mm;border-bottom:.3mm solid var(--line)}
+.sidet td{padding:1mm 1.4mm;border-bottom:1px solid #F0F2F5;vertical-align:middle}
+.sidet td.n,.sidet th.n{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:700;color:#1F5FA8}
+.sidet .dot{display:inline-block;width:2.4mm;height:2.4mm;border-radius:.5mm;margin-right:1.2mm;vertical-align:-.2mm}
+.sidet tr.hi td{background:#EEF4FB;font-weight:700}
+.sidet .chips{display:flex;flex-wrap:wrap;gap:.6mm 1.6mm}
+.sidet .chip{display:inline-flex;align-items:center;gap:.5mm;font-size:6.8pt;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.sidet .chip svg{width:2.4mm;height:2.4mm}
+.side.dense .sidet{font-size:6.6pt}
+.side.dense .sidet td{padding:.5mm 1.2mm}
+.empty-cats{font-size:7.6pt;color:var(--ink-2)}
+.pbar{display:block;height:1mm;background:#EEF0F3;border-radius:.5mm;margin-top:.6mm;overflow:hidden}
+.pbar i{display:block;height:100%;border-radius:.5mm;opacity:.75}
 .svct{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7.6pt;line-height:1.25}
-.svct th{background:var(--violet);color:#fff;font-weight:700;font-size:7pt;padding:1.4mm 1.6mm;text-align:left}
-.svct th.n,.svct td.n{text-align:center}
-.svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #EDEFF2;background:#fff;vertical-align:middle}
-.svct td:first-child{border-left:1mm solid var(--c)}
-.svct tr.cat td{background:var(--c);color:#fff;font-weight:800;font-size:8pt;padding:1.6mm}
-.svct tr.cat .muted{color:#fff}
-.svct tr.cat .ic-h{filter:brightness(0) invert(1)}
-.svct tr.mod td{font-size:7pt;color:var(--ink-2);background:#F7F8FA}
+.svct th{background:none;color:var(--ink-3);font-weight:700;font-size:6.8pt;text-transform:uppercase;letter-spacing:.03em;padding:1mm 1.6mm;text-align:left;border-bottom:.3mm solid var(--line)}
+.svct th.n,.svct td.n{text-align:right;font-variant-numeric:tabular-nums}
+.svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #F0F2F5;background:#fff;vertical-align:middle}
+.svct td:first-child{border-left:.8mm solid var(--c)}
+.svct tr.cat td{background:color-mix(in srgb, var(--c) 10%, #fff);color:var(--c);font-weight:800;font-size:8pt;padding:1.6mm}
+.svct tr.cat .muted{color:inherit}
+.svct tr.cat .ic-h{opacity:.9}
+.svct tr.mod td{font-size:7pt;color:var(--ink-2);background:#FAFBFC}
 .svct tr.mod td:first-child{padding-left:5mm}
 .svct tr.sub td{font-size:7.2pt}
 .svct .sv{display:flex;gap:1.5mm;align-items:center}
@@ -793,59 +815,85 @@ const atencionDe = (R, nombre, s) => {
   const a = CONFIG.ATENCIONES.find(a => norm(nombre).includes(norm(a.servicio)));
   return a && has(R[a.campo]) ? { v:num(R[a.campo]), l:a.etiqueta || 'atenciones' } : null;
 };
+// Centros por unidad territorial (provincia en la vista regional, distrito en las demás)
+function unitStats(R){
+  const rows = servRows(R === null ? null : { ...R, _dk: '' }) || [];   // en el distrito se muestra toda su provincia
+  const byProv = R._tipo === 'Región', Rg = R._region;
+  const units = {}; const order = [];
+  rows.forEach(s => { const k = (byProv ? s.pk : s.dk) || '-';
+    const known = byProv ? Rg._subs[k] : (Rg._subs[R._pk] || { dists:{} }).dists[k];
+    if (!units[k]){ units[k] = { key:k, nombre: titleCase((known && known.nombre) || (byProv ? s.prov : s.dist) || 'Sin dato'), n:0, svc:{} }; order.push(k); }
+    const u = units[k]; u.n += s.n; u.svc[s.servicio] = (u.svc[s.servicio] || 0) + s.n; });
+  return order.map(k => units[k]).sort((a,b) => b.n - a.n || a.nombre.localeCompare(b.nombre,'es'));
+}
+const BLUES = ['#DCEAF7','#B3D1EE','#7FB0DF','#4A88C9','#1F5FA8'];
+const blueOf = (v, max) => !v ? '#EEF0F3' : BLUES[Math.min(BLUES.length - 1, Math.ceil(v / Math.max(max,1) * BLUES.length) - 1)];
+
 function pageServices(R, n){
   const rows = servRows(R);
   if (rows === null) return '';
   const list = groupServices(rows);
-  const pad = x => String(x).padStart(2,'0');
   const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
   list.forEach(s => { if (!cats.includes(s.cat)) cats.push(s.cat); });
-  const CAT_COLOR = ['#C8102E','#E07B24','#B0457E','#2A8AA8','#3FA34D','#6B7280'];
+  const CAT_COLOR = ['#C8102E','#D9701E','#B0457E','#2A8AA8','#3B8F4A','#6B7280'];
   const fmtAt = v => v == null ? '<span class="muted">—</span>' : fmtN(v);
   const sumAt = items => items.some(s => s.at != null) ? items.reduce((a,s) => a + (s.at || 0), 0) : null;
+  const maxAt = Math.max(1, ...list.map(s => s.at || 0));
+  const bar = (v, c) => v ? `<span class="pbar"><i style="width:${Math.max(3, v / maxAt * 100).toFixed(0)}%;background:${c}"></i></span>` : '';
+  const empty = [];
   const blocks = cats.map((cname, ci) => {
     const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === cname) || {};
     const items = list.filter(s => s.cat === cname);
-    if (!items.length && !cfg.vacio) return null;
-    const color = CAT_COLOR[ci % CAT_COLOR.length];
     const title = cname.replace(/^En /,'').replace(/^./, c => c.toUpperCase());
-    let rowsHtml = '', w = 1;
-    if (!items.length){ rowsHtml = `<tr class="sub"><td colspan="3" class="muted">${esc(cfg.vacio)}</td></tr>`; w++; }
-    // agrupa por tipo de servicio; si tiene modalidades, se muestran debajo
+    if (!items.length){ if (cfg.vacio) empty.push(title.toLowerCase()); return null; }
+    const color = CAT_COLOR[ci % CAT_COLOR.length];
+    let rowsHtml = '', w = 1.2;
     const tipos = []; items.forEach(s => { let g = tipos.find(x => x.tipo === s.tipo); if (!g){ g = { tipo: s.tipo, items: [] }; tipos.push(g); } g.items.push(s); });
     tipos.forEach(g => {
       const withMods = g.items.length > 1 || g.items[0].mod;
       if (withMods){
-        rowsHtml += `<tr><td>${esc(g.tipo)}</td><td class="n">${g.items.reduce((a,s)=>a+s.n,0)}</td><td class="n">${fmtAt(sumAt(g.items))}</td></tr>`;
+        const at = sumAt(g.items);
+        rowsHtml += `<tr><td>${esc(g.tipo)}</td><td class="n">${g.items.reduce((a,s)=>a+s.n,0)}</td><td class="n">${fmtAt(at)}${bar(at, color)}</td></tr>`;
         g.items.forEach(s => { rowsHtml += `<tr class="mod"><td><span class="sv">${symbolSvg(s.nombre)}<span>${esc(s.mod || 'Sin modalidad')}</span></span></td><td class="n">${s.n}</td><td class="n">${fmtAt(s.at)}</td></tr>`; });
         w += 1 + g.items.length * .8;
       } else {
         const s = g.items[0];
-        rowsHtml += `<tr><td><span class="sv">${symbolSvg(s.nombre)}<span>${esc(s.nombre)}</span></span></td><td class="n">${s.n}</td><td class="n">${fmtAt(s.at)}</td></tr>`;
+        rowsHtml += `<tr><td><span class="sv">${symbolSvg(s.nombre)}<span>${esc(s.nombre)}</span></span></td><td class="n">${s.n}</td><td class="n">${fmtAt(s.at)}${bar(s.at, color)}</td></tr>`;
         w += 1;
       }
     });
     const head = `<tr class="cat"><td>${icon(cfg.icono,'ic-h')}${esc(title)}</td><td class="n">${items.reduce((a,s)=>a+s.n,0)}</td><td class="n">${fmtAt(sumAt(items))}</td></tr>`;
     return { w, html: `<tbody style="--c:${color}">${head}${rowsHtml}</tbody>` };
   }).filter(Boolean);
-  // reparte las categorías en dos tablas de alto parecido
   const total = blocks.reduce((a,b) => a + b.w, 0); let acc = 0, cut = blocks.length;
   for (let i = 0; i < blocks.length; i++){ if (acc + blocks[i].w / 2 > total / 2){ cut = Math.max(i, 1); break; } acc += blocks[i].w; }
-  const tableOf = bl => bl.length ? `<table class="svct"><colgroup><col><col style="width:15mm"><col style="width:21mm"></colgroup>
-    <thead><tr><th>Servicio MIMP</th><th class="n">N° centros</th><th class="n">Población atendida</th></tr></thead>${bl.map(b => b.html).join('')}</table>` : '';
-  const colA = tableOf(blocks.slice(0, cut)), colB = tableOf(blocks.slice(cut));
-  // el mapa se achica cuando la leyenda es larga, para que todo quepa en una página
-  const lines = Math.max(blocks.slice(0,cut).reduce((a,b)=>a+b.w,0), blocks.slice(cut).reduce((a,b)=>a+b.w,0));
-  const mapH = lines <= 9 ? 112 : lines <= 13 ? 100 : lines <= 17 ? 86 : lines <= 21 ? 72 : 58;
-  const map = mapSvg(R);
+  const tableOf = bl => bl.length ? `<table class="svct"><colgroup><col><col style="width:13mm"><col style="width:22mm"></colgroup>
+    <thead><tr><th>Servicio</th><th class="n">Centros</th><th class="n">Pob. atendida</th></tr></thead>${bl.map(b => b.html).join('')}</table>` : '<div></div>';
+
+  // tarjetas de totales
+  const nCent = list.reduce((a,s)=>a+s.n,0), atTot = sumAt(list);
+  const kpis = `<div class="kpis">
+    <div class="kpi"><b>${fmtN(list.length)}</b><span>servicios MIMP</span></div>
+    <div class="kpi"><b>${fmtN(nCent)}</b><span>centros</span></div>
+    <div class="kpi"><b>${atTot == null ? '—' : fmtN(atTot)}</b><span>personas atendidas</span></div></div>`;
+
+  // mapa + cuadro de centros por provincia o distrito
+  const units = unitStats(R);
+  const map = mapSvg(R, units);
+  const unitName = R._tipo === 'Región' ? 'Provincia' : 'Distrito';
+  const sideRows = units.map(u => `<tr${R._tipo === 'Distrito' && u.key === R._dk ? ' class="hi"' : ''}><td>${esc(u.nombre)}</td><td class="n"><span class="dot" style="background:${blueOf(u.n, units[0] ? units[0].n : 1)}"></span>${u.n}</td>
+      <td class="chips">${Object.entries(u.svc).map(([sv, k]) => `<span class="chip">${symbolSvg(sv)}${k}</span>`).join('')}</td></tr>`).join('');
+  const side = units.length ? `<div class="side${units.length > 18 ? ' dense' : ''}"><table class="sidet"><thead><tr><th>${unitName}</th><th class="n">Centros</th><th>Servicios</th></tr></thead><tbody>${sideRows}</tbody></table></div>` : '';
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
+  const cap = R._tipo === 'Región' ? `Centros por provincia · Región ${esc(R.region)}` : `Centros por distrito · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`;
+
   return `<section class="page">${band(R)}<div class="page-body">
-    <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>
-      <div class="svc-counts inline"><span><b>${pad(list.length)}</b> servicios MIMP</span><span><b>${pad(list.reduce((a,s)=>a+s.n,0))}</b> centros</span></div></div>
-    ${map ? `<div class="map-cap">${R._tipo === 'Región' ? `Mapa provincial · Región ${esc(R.region)}` : `Mapa distrital · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`}</div><div class="map map-geo">${map}</div>` : (R._tipo === 'Región' && R._mapa ? `<div class="map" style="height:${mapH}mm"><img src="${R._mapa}" alt="Mapa de servicios en ${esc(R.region)}"></div>` : '')}
-    ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito aparece resaltado dentro de la provincia de ${esc(R._prov)}.</div>` : ''}
+    <div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>${kpis}</div>
+    ${map ? `<div class="map-cap">${cap}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
+    ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito de ${esc(R._nombre)} aparece con borde oscuro dentro de la provincia de ${esc(R._prov)}.</div>` : ''}
     ${isSub(R) && !rows.some(s => s.at != null) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
-    ${list.length ? `<div class="svc-tables">${colA}${colB}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
+    ${list.length ? `<div class="svc-tables">${tableOf(blocks.slice(0, cut))}${tableOf(blocks.slice(cut))}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
+    ${empty.length ? `<p class="empty-cats"><b>Sin centros:</b> ${esc(empty.join(', '))}.</p>` : ''}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
   </div>${footer(R,n)}</section>`;
 }
@@ -877,67 +925,47 @@ async function loadMap(){
   }catch(e){ TOPO = null; MAP_ERR = e.message; console.warn('Mapa:', e); }
 }
 const titleCase = s => (s||'').toLowerCase().replace(/(^|[\s(-])([a-záéíóúñü])/g, (m,a,b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y|El)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
-function mapSvg(R){
+function mapSvg(R, units){
   if (!TOPO) return '';
   const Rg = R._region;
-  const provs = new Set(R._tipo === 'Región' ? Rg._subOrder.filter(k => /^\d{4}$/.test(k)) : [R._pk]);
+  const regionView = R._tipo === 'Región';
+  const provs = new Set(regionView ? Rg._subOrder.filter(k => /^\d{4}$/.test(k)) : [R._pk]);
   const geoms = GEOMS.filter(g => provs.has(String(g.properties.IDPROV)));
   if (!geoms.length) return '';
-  const W = 800, H = 470, coll = { type:'GeometryCollection', geometries: geoms };
+  units = units || unitStats(R);
+  const count = {}; units.forEach(u => count[u.key] = u.n);
+  const max = Math.max(1, ...units.map(u => u.n));
+  const W = 600, H = 560, coll = { type:'GeometryCollection', geometries: geoms };
   const fc = topojson.feature(TOPO, coll);
-  const proj = d3.geoMercator().fitExtent([[12,12],[W-12,H-12]], fc);
+  const proj = d3.geoMercator().fitExtent([[10,10],[W-10,H-40]], fc);
   const path = d3.geoPath(proj);
-  const byDist = {}; fc.features.forEach(f => byDist[String(f.properties.IDDIST)] = f);
-  const regionView = R._tipo === 'Región';
-  // fondo: distritos
-  const fills = fc.features.map(f => {
-    const hi = R._tipo === 'Distrito' && String(f.properties.IDDIST) === R._dk;
-    return `<path d="${path(f)}" fill="${hi ? '#F4C9CF' : '#E7E9ED'}" stroke="${regionView ? '#F1F2F5' : '#FFFFFF'}" stroke-width="${regionView ? .6 : 1.2}"/>`;
+  // zonas: provincias (fusionando sus distritos) o distritos
+  const zones = regionView
+    ? [...provs].map(pk => { const g = geoms.filter(x => String(x.properties.IDPROV) === pk); if (!g.length) return null;
+        return { key: pk, geo: topojson.merge(TOPO, g), name: titleCase((Rg._subs[pk] && Rg._subs[pk].nombre) || g[0].properties.NOMBPROV) }; }).filter(Boolean)
+    : fc.features.map(f => { const k = String(f.properties.IDDIST); const known = (Rg._subs[R._pk] || { dists:{} }).dists[k];
+        return { key: k, geo: f, name: titleCase((known && known.nombre) || f.properties.NOMBDIST) }; });
+  const fills = zones.map(z => `<path d="${path(z.geo)}" fill="${blueOf(count[z.key] || 0, max)}" stroke="#FFFFFF" stroke-width="${regionView ? 2 : 1.2}" stroke-linejoin="round"/>`).join('');
+  const hi = R._tipo === 'Distrito' ? zones.find(z => z.key === R._dk) : null;
+  const hiLine = hi ? `<path d="${path(hi.geo)}" fill="none" stroke="#1F2430" stroke-width="2.6" stroke-linejoin="round"/>` : '';
+  const outline = `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a === b))}" fill="none" stroke="#B9C2CE" stroke-width="1"/>`;
+  // número de centros en un círculo y nombre debajo (se omite el nombre en zonas muy pequeñas)
+  const marks = zones.map(z => {
+    const [x, y] = path.centroid(z.geo); if (isNaN(x)) return '';
+    const area = path.area(z.geo), v = count[z.key] || 0;
+    const showName = area > (regionView ? 1500 : 2200);
+    const fs = regionView ? 16 : (zones.length > 30 ? 12 : 14);
+    const nameEl = showName ? `<text x="${x.toFixed(1)}" y="${(y + (v ? 32 : 5)).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${fs}" font-weight="600" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" opacity=".9">${esc(z.name)}</text><text x="${x.toFixed(1)}" y="${(y + (v ? 32 : 5)).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${fs}" font-weight="600" fill="#4B5462">${esc(z.name)}</text>` : '';
+    const bub = v ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${v > 9 ? 17 : 14}" fill="#FFFFFF" stroke="#1F5FA8" stroke-width="2"/><text x="${x.toFixed(1)}" y="${(y + 5.5).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="16" font-weight="800" fill="#1F5FA8">${v}</text>` : '';
+    return bub + nameEl;
   }).join('');
-  const provLines = regionView ? `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a !== b && a.properties.IDPROV !== b.properties.IDPROV))}" fill="none" stroke="#FFFFFF" stroke-width="2.6"/>` : '';
-  const outline = `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a === b))}" fill="none" stroke="#C3C8D0" stroke-width="1.2"/>`;
-  // etiquetas: provincias (vista regional) o distritos
-  const label = (x, y, txt, size) => `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round">${esc(txt)}</text><text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${size}" font-weight="700" fill="#7A8392">${esc(txt)}</text>`;
-  const provCentroid = {};
-  [...provs].forEach(pk => { const g = geoms.filter(x => String(x.properties.IDPROV) === pk); if (g.length) provCentroid[pk] = path.centroid(topojson.merge(TOPO, g)); });
-  const rows = (SERV || []).filter(s => s.reg === tkey(Rg.region) && provs.has(s.pk) && (R._tipo !== 'Distrito' || s.dk === R._dk));
-  const S = 11, GAP = 2.5;
-  const sym = (sv, x, y) => symbolSvg(sv).replace('<svg ', `<svg x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${S}" height="${S}" `);
-  let labels = '', marks = '';
-  if (regionView){
-    // vista regional: un grupo por provincia, un símbolo por tipo de servicio con su cantidad
-    const byProv = {}; rows.forEach(s => { const g = byProv[s.pk] = byProv[s.pk] || {}; g[s.servicio] = (g[s.servicio] || 0) + s.n; });
-    [...provs].filter(pk => provCentroid[pk]).forEach(pk => {
-      const [cx, cy] = provCentroid[pk];
-      const items = Object.entries(byProv[pk] || {});
-      const CW = 30, RH = S + 4;
-      const cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(items.length)))), rowsN = Math.ceil(items.length / cols);
-      const w = items.length ? Math.min(cols, items.length) * CW - (CW - S - 14) : 0, h = rowsN * RH;
-      const x0 = cx - w / 2, y0 = cy - h / 2;
-      if (items.length){
-        marks += `<rect x="${(x0-4).toFixed(1)}" y="${(y0-4).toFixed(1)}" width="${(w+8).toFixed(1)}" height="${(h+4).toFixed(1)}" rx="4" fill="#FFFFFF" fill-opacity=".85"/>`;
-        marks += items.map(([sv, n], i) => { const x = x0 + (i % cols) * CW, y = y0 + Math.floor(i / cols) * RH;
-          return sym(sv, x, y) + `<text x="${(x + S + 2.5).toFixed(1)}" y="${(y + S - 1.5).toFixed(1)}" font-family="Public Sans, Arial" font-size="10" font-weight="700" fill="#3B2E7E">${n}</text>`; }).join('');
-      }
-      const g = geoms.find(x => String(x.properties.IDPROV) === pk);
-      const name = (Rg._subs[pk] && Rg._subs[pk].nombre) || g.properties.NOMBPROV;
-      labels += label(cx, (items.length ? y0 + h + 12 : cy + 5), titleCase(name), 13);
-    });
-  } else {
-    labels = fc.features.map(f => { const [x,y] = path.centroid(f); const size = fc.features.length > 30 ? 8 : 10;
-      const known = (Rg._subs[R._pk] || {dists:{}}).dists[String(f.properties.IDDIST)];
-      return label(x, y + 14, titleCase((known && known.nombre) || f.properties.NOMBDIST), size); }).join('');
-    // símbolos agrupados en el centro de cada distrito
-    const groups = {}; rows.forEach(s => { const k = byDist[s.dk] ? s.dk : 'p' + s.pk; (groups[k] = groups[k] || []).push(s); });
-    marks = Object.entries(groups).map(([k, list]) => {
-      const c = k[0] === 'p' ? provCentroid[k.slice(1)] : path.centroid(byDist[k]); if (!c || isNaN(c[0])) return '';
-      const items = list.flatMap(s => Array(Math.min(s.n, 6)).fill(s.servicio));
-      const cols = Math.min(4, Math.ceil(Math.sqrt(items.length))), rowsN = Math.ceil(items.length / cols);
-      const x0 = c[0] - (cols * (S + GAP) - GAP) / 2, y0 = c[1] - (rowsN * (S + GAP) - GAP) / 2;
-      return items.map((sv, i) => sym(sv, x0 + (i % cols) * (S + GAP), y0 + Math.floor(i / cols) * (S + GAP))).join('');
-    }).join('');
-  }
-  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de servicios">${fills}${provLines}${outline}${marks}${labels}</svg>`;
+  // leyenda de colores
+  const lx = 14, ly = H - 26;
+  const legend = `<text x="${lx}" y="${ly - 8}" font-family="Public Sans, Arial" font-size="14" fill="#7A8392">N° de centros</text>` +
+    `<rect x="${lx}" y="${ly}" width="22" height="14" fill="#EEF0F3" stroke="#D5DAE1" stroke-width=".8"/><text x="${lx + 27}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">0</text>` +
+    BLUES.map((c, i) => `<rect x="${lx + 50 + i * 26}" y="${ly}" width="26" height="14" fill="${c}"/>`).join('') +
+    `<text x="${lx + 50 + BLUES.length * 26 + 6}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">${max}</text>`;
+  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros">${fills}${outline}${hiLine}${marks}${legend}</svg>`;
 }
 
 // ── Página 5: distribución territorial de los servicios ──
