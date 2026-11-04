@@ -208,12 +208,6 @@ button { font-family:inherit; }
 .card-icon { width:40px; height:40px; object-fit:contain; flex-shrink:0; border-radius:10px; }
 .card-title { font-size:18px; font-weight:700; line-height:1.25; letter-spacing:-.01em; text-wrap:pretty; }
 .card-desc { font-size:13.5px; line-height:1.5; color:var(--text-2); text-wrap:pretty; }
-.card-kpis { border-top:1px solid var(--line-2); padding-top:14px; display:flex; flex-direction:column; gap:10px; }
-.kpi-row { display:flex; gap:28px; flex-wrap:wrap; }
-.kpi { display:flex; flex-direction:column; gap:2px; }
-.kpi-val { font-size:24px; font-weight:700; line-height:1.1; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
-.kpi-lbl { font-size:12px; color:var(--text-3); }
-.card-corte { font-size:11.5px; color:var(--text-4); }
 .card-actions { margin-top:auto; display:flex; flex-direction:column; gap:10px; }
 .btn-main { display:flex; align-items:center; justify-content:center; gap:8px; height:42px; border-radius:10px; background:var(--blue-dk); color:#fff; font-size:14px; font-weight:600; text-decoration:none; transition:background .12s; }
 .btn-main:hover { background:var(--blue-dkr); color:#fff; }
@@ -255,7 +249,6 @@ button { font-family:inherit; }
   .card { padding:16px; gap:14px; }
   .card-title { font-size:17px; }
   .card-desc { display:none; }
-  .kpi-val { font-size:21px; }
   .btn-main { height:46px; font-size:14.5px; }
   .link { font-size:13px; padding:10px 12px; }
 }
@@ -304,14 +297,15 @@ button { font-family:inherit; }
 <script>
 // ── Datos (Google Sheets) ──
 const SHEET_URL      = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJCiQn043FqK5zpdzJ2LacMQVO80RyGzQFSDyc5_x_07VeLCNjO9EfN4pvKu3enw/pub?gid=0&single=true&output=tsv';
-const KPIS_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJCiQn043FqK5zpdzJ2LacMQVO80RyGzQFSDyc5_x_07VeLCNjO9EfN4pvKu3enw/pub?gid=478573582&single=true&output=tsv';
+// Hoja con la periodicidad de cada sección (Sección | Periodicidad)
+const META_SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQB5NrhOTer37V3oJCiQn043FqK5zpdzJ2LacMQVO80RyGzQFSDyc5_x_07VeLCNjO9EfN4pvKu3enw/pub?gid=478573582&single=true&output=tsv';
 const PROXIES = [
   u => u,
   u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`
 ];
 
-let DATA = { herramientas:[], kpis:[], meta:{} };
+let DATA = { herramientas:[], meta:{} };
 let activeFilter = 'TODAS';
 let searchTerm = '';
 
@@ -343,7 +337,6 @@ async function loadAll() {
       `<span class="hub-loading" style="color:var(--red)">No se pudo cargar la información. (${e.message})</span>`;
     return;
   }
-  await fetchText(KPIS_SHEET_URL).then(parseKpis).catch(() => debug('KPIs no cargados'));
   document.getElementById('homeLoadingMsg').style.display = 'none';
   if (!DATA.herramientas.length) {
     document.getElementById('moduleList').innerHTML = '<p style="color:var(--red)">Se cargó el Sheet pero no se encontraron datos.</p>';
@@ -352,6 +345,9 @@ async function loadAll() {
   }
   buildFilters();
   renderCards();
+  // La periodicidad se carga después, sin retrasar las tarjetas
+  fetchText(META_SHEET_URL).then(raw => { parseMeta(raw); renderCards(); })
+    .catch(() => debug('Periodicidad no cargada'));
 }
 
 function parseHerramientas(raw) {
@@ -371,20 +367,18 @@ function parseHerramientas(raw) {
   }
 }
 
-function parseKpis(raw) {
-  // Sección | Periodicidad | Corte | Variable | Valor | Unidad | Icono
-  DATA.kpis = []; DATA.meta = {};
-  let lastS = '', lastP = 'No aplica', lastC = '';
+function parseMeta(raw) {
+  // Sección | Periodicidad
+  DATA.meta = {};
+  let lastS = '', lastP = 'No aplica';
   for (const line of splitLines(raw)) {
     if (!line.trim()) continue;
-    const [seccion, periodicidad, corte, variable, valor, unidad] = splitCols(line);
+    const [seccion, periodicidad] = splitCols(line);
     if (seccion === 'Sección') continue;
     if (seccion) lastS = seccion;
     if (periodicidad) lastP = periodicidad;
-    if (corte) lastC = corte;
     if (!lastS) continue;
-    if (!DATA.meta[lastS]) DATA.meta[lastS] = { periodicidad:lastP, corte:lastC };
-    if (variable) DATA.kpis.push({ seccion:lastS, variable, valor:valor||'', unidad:unidad||'' });
+    if (!DATA.meta[lastS]) DATA.meta[lastS] = { periodicidad:lastP };
   }
 }
 
@@ -452,7 +446,6 @@ const imgSrc = v => /^https?:\/\//i.test(v) ? v : 'imagenes/' + encodeURICompone
 
 function cardHtml(s) {
   const meta = DATA.meta[s.seccion] || {};
-  const kpis = DATA.kpis.filter(k => k.seccion === s.seccion).slice(0, 3);
   const live = s.links.filter(l => !isPending(l));
   const main = live.find(l => /tablero|visor/i.test(l.herramienta)) || live[0];
   const others = s.links.filter(l => l !== main);
@@ -471,11 +464,6 @@ function cardHtml(s) {
       </div>
       ${s.descripcion ? `<p class="card-desc">${s.descripcion}</p>` : ''}
     </div>
-    ${kpis.length ? `
-    <div class="card-kpis">
-      <div class="kpi-row">${kpis.map(k => `<div class="kpi"><span class="kpi-val">${fmtVal(k.valor, k.unidad)}</span><span class="kpi-lbl">${k.variable}</span></div>`).join('')}</div>
-      ${meta.corte ? `<span class="card-corte">Corte al ${meta.corte}</span>` : ''}
-    </div>` : ''}
     <div class="card-actions">
       ${main ? `<a class="btn-main" href="${main.url}" target="_blank" rel="noopener">${main.herramienta}<span>↗</span></a>` : ''}
       ${others.length ? `<div class="links">${others.map(l => isPending(l)
@@ -484,18 +472,6 @@ function cardHtml(s) {
       ${!s.links.length ? '<span class="no-links">Sin enlaces configurados</span>' : ''}
     </div>
   </article>`;
-}
-
-function fmtVal(val, unit) {
-  if (!val) return '—';
-  const clean = val.toString().trim();
-  if (clean.includes(' ') || clean.includes('/')) return clean;
-  const n = parseFloat(clean.replace(',', '.'));
-  if (isNaN(n)) return val;
-  if ((unit||'').toLowerCase().includes('porcentaje')) { const p = n > 1 ? n : n * 100; return p.toFixed(1) + '%'; }
-  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-  if (n >= 1000) return n.toLocaleString('en-US').replace(/,/g, ' ');
-  return n.toFixed(n % 1 === 0 ? 0 : 1);
 }
 
 function shareHub() {
