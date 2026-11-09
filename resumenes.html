@@ -345,6 +345,11 @@ const CONFIG = {
     { nombre:'En familias', icono:'Servicios familias', claves:['desarrollo integral de la familia','cedif','comunal familiar','recreacion familiar','familias igualitarias'] }
   ],
   OTROS: 'Otros servicios',
+  // Nombre con el que se muestra un servicio (según el valor de la columna TIPO)
+  NOMBRES: {
+    'soufcat': 'Sede de operación UFCAT (SOUFCAT)',
+    'saipd':   'Atención Integral a la Persona (SAIPD)'
+  },
   // Atenciones (hoja Servicios, solo regional) que se muestran junto a cada servicio
   ATENCIONES: [
     { servicio:'centro emergencia mujer y familia - regular', campo:'cem_reg_at' },
@@ -464,6 +469,7 @@ function symbolSvg(name){
 const tkey = s => norm(s).replace(/[^a-z0-9]+/g,' ').trim();
 let SERV = [], DIR = null, LISTAS = {}, PK2REG = {};
 
+const tipoN = v => { v = (v||'').trim(); return (CONFIG.NOMBRES || {})[norm(v)] || v; };
 // Lee CSV o TSV y devuelve filas de celdas
 function parseSheet(raw){
   raw = raw.replace(/\r\n?/g,'\n');
@@ -526,7 +532,7 @@ async function loadData(){
       if (['no aplica','-','sin modalidad','na','n.a.'].includes(norm(mod)) || norm(mod) === norm(c[iC])) mod = '';
       const clean = i => i >= 0 ? (c[i]||'').replace(/\s+/g,' ').trim() : '';
       const r = { reg: tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
-        servicio: mod ? `${c[iC]} - ${mod}` : c[iC], tipo: c[iC].trim(), mod, cat: '',
+        servicio: mod ? `${tipoN(c[iC])} - ${mod}` : tipoN(c[iC]), tipo: tipoN(c[iC]), mod, cat: '',
         nombre: clean(iN), dir: clean(iA), coord: clean(iK), tel: clean(iT), correo: clean(iE),
         at: iPA >= 0 ? num(c[iPA]) : null, act: iAct >= 0 ? num(c[iAct]) : null, camas: iCam >= 0 ? num(c[iCam]) : null, periodo: clean(iPer), n: 1,
         si: [], no: [], nd: [] };
