@@ -208,7 +208,7 @@ label.btn{display:inline-flex;align-items:center}
 .svct th{background:none;color:var(--ink-3);font-weight:700;font-size:6.8pt;text-transform:uppercase;letter-spacing:.03em;padding:1mm 1.6mm;text-align:left;border-bottom:.3mm solid var(--line)}
 .svct th.n,.svct td.n{text-align:right;font-variant-numeric:tabular-nums}
 .svct td.n{white-space:nowrap}
-.page.nat .map-row{max-height:none;min-height:0;flex:1 1 0;grid-template-columns:1.1fr 1fr}
+.page.nat .map-row{max-height:none;min-height:0;flex:1 1 0;grid-template-columns:1.35fr 1fr}
 .page.nat .sidet{font-size:7pt}
 .svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #F0F2F5;background:#fff;vertical-align:middle}
 .svct td:first-child{border-left:.8mm solid var(--c)}
@@ -1000,7 +1000,7 @@ function pageServices(R, n){
   const notes = `${empty.length ? `<p class="empty-cats"><b>Sin centros:</b> ${esc(empty.join(', '))}.</p>` : ''}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}`;
   // nacional: el mapa con su cuadro en una página y las tablas en la siguiente
-  if (isNat(R)) return `<section class="page nat">${band(R)}<div class="page-body">${head}
+  if (isNat(R) || units.length > 20) return `<section class="page nat">${band(R)}<div class="page-body">${head}
       ${map ? `<div class="map-cap"><span>${cap}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
     </div>${footer(R,n)}</section>
     <section class="page">${band(R)}<div class="page-body"><div><span class="h2">Servicios MIMP implementados por tipo${has(R.periodo)?' (*)':''}</span></div>${tables}${notes}</div>${footer(R,n+1)}</section>`;
@@ -1049,11 +1049,32 @@ function mapNational(units){
   const proj = d3.geoMercator().fitExtent([[10,10],[W-10,H-10]], topojson.feature(TOPO, coll));
   const path = d3.geoPath(proj);
   const groups = {}; GEOMS.forEach(g => { const pk = String(g.properties.IDPROV); const k = PK2REG[pk] || ('d' + pk.slice(0,2)); (groups[k] = groups[k] || []).push(g); });
-  const zones = Object.entries(groups).map(([k, g]) => ({ key:k, geo: topojson.merge(TOPO, g), name: regionName(k) }));
-  const fills = zones.map(z => `<path d="${path(z.geo)}" fill="${blueOf(count[z.key] || 0, max)}" stroke="#FFFFFF" stroke-width="1.6" stroke-linejoin="round"/>`).join('');
-  const marks = zones.map(z => { const [x, y] = path.centroid(z.geo); const v = count[z.key] || 0; if (isNaN(x) || !v) return '';
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${v > 99 ? 15 : 12}" fill="#FFFFFF" stroke="#1F5FA8" stroke-width="1.8"/><text x="${x.toFixed(1)}" y="${(y + 4.5).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${v > 99 ? 11.5 : 12.5}" font-weight="800" fill="#1F5FA8">${v}</text>`; }).join('');
-  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros por región">${fills}${marks}</svg>`;
+  const zones = Object.entries(groups).map(([k, g]) => ({ key:k, g, geo: topojson.merge(TOPO, g), name: regionName(k) }));
+  // regiones pequeñas que van ampliadas: Lima Metropolitana (provincia 1501) y Callao (07)
+  const smallKeys = new Set([PK2REG['1501'], PK2REG['0701']].filter(Boolean));
+  const fill = z => blueOf(count[z.key] || 0, max);
+  const bubble = (x, y, v) => `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${v > 99 ? 15 : 12}" fill="#FFFFFF" stroke="#1F5FA8" stroke-width="1.8"/><text x="${x.toFixed(1)}" y="${(y + 4.5).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${v > 99 ? 11.5 : 12.5}" font-weight="800" fill="#1F5FA8">${v}</text>`;
+  const fills = zones.map(z => `<path d="${path(z.geo)}" fill="${fill(z)}" stroke="#FFFFFF" stroke-width="1.6" stroke-linejoin="round"/>`).join('');
+  const marks = zones.map(z => { if (smallKeys.has(z.key)) return ''; const [x, y] = path.centroid(z.geo); const v = count[z.key] || 0; if (isNaN(x) || !v) return ''; return bubble(x, y, v); }).join('');
+  let inset = '';
+  const small = zones.filter(z => smallKeys.has(z.key));
+  if (small.length){
+    const sg = { type:'GeometryCollection', geometries: small.flatMap(z => z.g) };
+    const sfc = topojson.feature(TOPO, sg);
+    // marco en el mapa principal
+    const [[bx0, by0], [bx1, by1]] = path.bounds(sfc);
+    const box = { x: 6, y: H - 282, w: 186, h: 272 };
+    const ip = d3.geoMercator().fitExtent([[box.x + 12, box.y + 30], [box.x + box.w - 12, box.y + box.h - 22 - small.length * 16]], sfc);
+    const ipath = d3.geoPath(ip);
+    inset = `<rect x="${(bx0-4).toFixed(1)}" y="${(by0-4).toFixed(1)}" width="${(bx1-bx0+8).toFixed(1)}" height="${(by1-by0+8).toFixed(1)}" fill="none" stroke="#1F2430" stroke-width="1.2"/>
+      <line x1="${(bx0-4).toFixed(1)}" y1="${((by0+by1)/2).toFixed(1)}" x2="${box.x + box.w}" y2="${box.y + 60}" stroke="#1F2430" stroke-width=".8" stroke-dasharray="3 3"/>
+      <rect x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="6" fill="#FFFFFF" stroke="#C3C8D0" stroke-width="1"/>
+      <text x="${box.x + 10}" y="${box.y + 18}" font-family="Public Sans, Arial" font-size="12" font-weight="700" fill="#4B5462">Lima Metropolitana y Callao</text>
+      ${small.map(z => `<path d="${ipath(z.geo)}" fill="${fill(z)}" stroke="#FFFFFF" stroke-width="1.6"/>`).join('')}
+      ${small.map(z => { const [x, y] = ipath.centroid(z.geo); const v = count[z.key] || 0; return isNaN(x) || !v ? '' : bubble(x, y, v); }).join('')}
+      ${small.map((z, i) => `<rect x="${box.x + 12}" y="${box.y + box.h - 14 - (small.length - i) * 16 + 6}" width="11" height="11" fill="${fill(z)}" stroke="#C3C8D0" stroke-width=".6"/><text x="${box.x + 28}" y="${box.y + box.h - 14 - (small.length - i) * 16 + 15}" font-family="Public Sans, Arial" font-size="11.5" fill="#4B5462">${esc(z.name)} · <tspan font-weight="800" fill="#1F5FA8">${count[z.key] || 0}</tspan></text>`).join('')}`;
+  }
+  return `<svg class="geo" preserveAspectRatio="xMidYMin meet" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros por región">${fills}${marks}${inset}</svg>`;
 }
 function mapSvg(R, units){
   if (!TOPO) return '';
@@ -1066,8 +1087,10 @@ function mapSvg(R, units){
   units = units || unitStats(R);
   const count = {}; units.forEach(u => count[u.key] = u.n);
   const max = Math.max(1, ...units.map(u => u.n));
-  const W = 600, H = 560, coll = { type:'GeometryCollection', geometries: geoms };
+  const W = 600, coll = { type:'GeometryCollection', geometries: geoms };
   const fc = topojson.feature(TOPO, coll);
+  const b0 = d3.geoPath(d3.geoMercator().fitWidth(W, fc)).bounds(fc);
+  const H = Math.round(Math.min(Math.max(W * (b0[1][1] - b0[0][1]) / Math.max(1, b0[1][0] - b0[0][0]), 420), 900));
   const proj = d3.geoMercator().fitExtent([[10,10],[W-10,H-10]], fc);
   const path = d3.geoPath(proj);
   // zonas: provincias (fusionando sus distritos) o distritos
@@ -1096,7 +1119,7 @@ function mapSvg(R, units){
     `<rect x="${lx}" y="${ly}" width="22" height="14" fill="#EEF0F3" stroke="#D5DAE1" stroke-width=".8"/><text x="${lx + 27}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">0</text>` +
     BLUES.map((c, i) => `<rect x="${lx + 50 + i * 26}" y="${ly}" width="26" height="14" fill="${c}"/>`).join('') +
     `<text x="${lx + 50 + BLUES.length * 26 + 6}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">${max}</text>`;
-  return `<svg class="geo" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros">${fills}${outline}${hiLine}${marks}</svg>`;
+  return `<svg class="geo" preserveAspectRatio="xMidYMin meet" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros">${fills}${outline}${hiLine}${marks}</svg>`;
 }
 
 // ── Página 5: distribución territorial de los servicios ──
