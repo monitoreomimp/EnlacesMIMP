@@ -208,6 +208,10 @@ label.btn{display:inline-flex;align-items:center}
 .svct th{background:none;color:var(--ink-3);font-weight:700;font-size:6.8pt;text-transform:uppercase;letter-spacing:.03em;padding:1mm 1.6mm;text-align:left;border-bottom:.3mm solid var(--line)}
 .svct th.n,.svct td.n{text-align:right;font-variant-numeric:tabular-nums}
 .svct td.n{white-space:nowrap}
+.page.land{width:297mm;height:210mm}
+.page.land .band{font-size:17pt;padding:3mm 0}
+.page.land .page-body{padding:6mm 11mm 4mm;gap:3mm}
+.dirt td.nowrap{white-space:nowrap}
 .page.nat .map-row{max-height:none;min-height:0;flex:1 1 0;grid-template-columns:1.35fr 1fr}
 .page.nat .sidet{font-size:7pt}
 .svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #F0F2F5;background:#fff;vertical-align:middle}
@@ -249,6 +253,8 @@ hr.sep{border:none;border-top:1px solid var(--line)}
   .bar,.status,.progress{display:none!important}
   .viewer{padding:0;gap:0;display:block}
   .page{box-shadow:none;break-after:page}
+  @page land{size:A4 landscape;margin:0}
+  .page.land{page:land}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
 @media (prefers-reduced-motion:reduce){.progress{transition:none}}
@@ -345,6 +351,16 @@ const CONFIG = {
     { nombre:'En familias', icono:'Servicios familias', claves:['desarrollo integral de la familia','cedif','comunal familiar','recreacion familiar','familias igualitarias'] }
   ],
   OTROS: 'Otros servicios',
+  // Provincias que se muestran por zonas (mapa y cuadro por zona, y una página por zona).
+  // Clave: ubigeo de la provincia (4 dígitos). Cada zona lista los ubigeos de sus distritos.
+  ZONAS: {
+    '1501': {
+      'Lima Norte':  ['150102','150106','150110','150112','150117','150125','150135','150139'],  // Ancón, Carabayllo, Comas, Independencia, Los Olivos, Puente Piedra, SMP, Santa Rosa
+      'Lima Este':   ['150103','150107','150109','150111','150114','150118','150132','150137'],  // Ate, Chaclacayo, Cieneguilla, El Agustino, La Molina, Lurigancho, SJL, Santa Anita
+      'Lima Centro': ['150101','150104','150105','150113','150115','150116','150120','150121','150122','150128','150130','150131','150134','150136','150140','150141'], // Cercado, Barranco, Breña, Jesús María, La Victoria, Lince, Magdalena, Pueblo Libre, Miraflores, Rímac, San Borja, San Isidro, San Luis, San Miguel, Surco, Surquillo
+      'Lima Sur':    ['150108','150119','150123','150124','150126','150127','150129','150133','150138','150142','150143']  // Chorrillos, Lurín, Pachacámac, Pucusana, Punta Hermosa, Punta Negra, San Bartolo, SJM, Santa María del Mar, VES, VMT
+    }
+  },
   // Nombre con el que se muestra un servicio (según el valor de la columna TIPO)
   NOMBRES: {
     'soufcat': 'Sede de operación UFCAT (SOUFCAT)',
@@ -531,7 +547,7 @@ async function loadData(){
       let mod = iM >= 0 ? (c[iM]||'').trim() : '';
       if (['no aplica','-','sin modalidad','na','n.a.'].includes(norm(mod)) || norm(mod) === norm(c[iC])) mod = '';
       const clean = i => i >= 0 ? (c[i]||'').replace(/\s+/g,' ').trim() : '';
-      const r = { reg: tkey(c[h.reg]), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
+      const r = { reg: tkey(c[h.reg]), dep: (c[h.reg]||'').trim(), prov, dist, ...terrKeys(iU >= 0 ? ubigeo(c[iU]) : '', prov, dist),
         servicio: mod ? `${tipoN(c[iC])} - ${mod}` : tipoN(c[iC]), tipo: tipoN(c[iC]), mod, cat: '',
         nombre: clean(iN), dir: clean(iA), coord: clean(iK), tel: clean(iT), correo: clean(iE),
         at: iPA >= 0 ? num(c[iPA]) : null, act: iAct >= 0 ? num(c[iAct]) : null, camas: iCam >= 0 ? num(c[iCam]) : null, periodo: clean(iPer), n: 1,
@@ -909,6 +925,20 @@ const atencionDe = (R, nombre, s) => {
 const singleProv = R => { if (R._tipo !== 'Región') return ''; const p = R._region._subOrder.filter(k => /^\d{4}$/.test(k)); return p.length === 1 ? p[0] : ''; };
 const byProvView = R => R._tipo === 'Región' && !singleProv(R);
 const viewPk = R => R._pk || singleProv(R);
+// Zonas (Lima Metropolitana): por zona en la vista general; por distrito dentro de una zona
+const zonasDe = pk => (CONFIG.ZONAS || {})[pk] || null;
+const zonaDe = (pk, dk) => { const Z = zonasDe(pk); return Z ? (Object.keys(Z).find(z => Z[z].includes(dk)) || '') : ''; };
+function mapMode(R){
+  if (isNat(R)) return { mode:'nat' };
+  if (byProvView(R)) return { mode:'prov' };
+  const pk = viewPk(R), Z = zonasDe(pk);
+  if (Z){
+    const zona = R._zona || (R._tipo === 'Distrito' ? zonaDe(pk, R._dk) : '');
+    if (zona) return { mode:'dist', pk, zona, dists: new Set(Z[zona]) };
+    return { mode:'zona', pk };
+  }
+  return { mode:'dist', pk };
+}
 // Centros por unidad territorial (provincia en la vista regional, distrito en las demás)
 function regionName(k){ const r = REGIONES.find(x => tkey(x.region) === k); return r ? r.region : titleCase(k); }
 function unitStats(R){
@@ -916,13 +946,19 @@ function unitStats(R){
     const u = {}; (SERV || []).forEach(s => { const k = s.reg; if (!u[k]) u[k] = { key:k, nombre: regionName(k), n:0, svc:{} }; u[k].n += s.n; u[k].svc[s.servicio] = (u[k].svc[s.servicio] || 0) + s.n; });
     return Object.values(u).sort((a,b) => b.n - a.n || a.nombre.localeCompare(b.nombre,'es'));
   }
-  const rows = servRows(R === null ? null : { ...R, _dk: '' }) || [];   // en el distrito se muestra toda su provincia
-  const byProv = byProvView(R), Rg = R._region, pkV = viewPk(R);
+  let rows = servRows(R === null ? null : { ...R, _dk: '' }) || [];   // en el distrito se muestra toda su provincia (o su zona)
+  const M = mapMode(R), byProv = M.mode === 'prov', Rg = R._region, pkV = viewPk(R);
+  if (M.dists) rows = rows.filter(s => M.dists.has(s.dk));
   const units = {}; const order = [];
-  rows.forEach(s => { const k = (byProv ? s.pk : s.dk) || '-';
+  rows.forEach(s => {
+    if (M.mode === 'zona'){ const k = zonaDe(pkV, s.dk) || 'Sin zona';
+      if (!units[k]){ units[k] = { key:k, nombre:k, n:0, svc:{} }; order.push(k); }
+      const u = units[k]; u.n += s.n; u.svc[s.servicio] = (u.svc[s.servicio] || 0) + s.n; return; }
+    const k = (byProv ? s.pk : s.dk) || '-';
     const known = byProv ? Rg._subs[k] : (Rg._subs[pkV] || { dists:{} }).dists[k];
     if (!units[k]){ units[k] = { key:k, nombre: titleCase((known && known.nombre) || (byProv ? s.prov : s.dist) || 'Sin dato'), n:0, svc:{} }; order.push(k); }
     const u = units[k]; u.n += s.n; u.svc[s.servicio] = (u.svc[s.servicio] || 0) + s.n; });
+  if (M.mode === 'zona') return Object.keys(zonasDe(pkV)).map(z => units[z] || { key:z, nombre:z, n:0, svc:{} }).concat(units['Sin zona'] ? [units['Sin zona']] : []);
   return order.map(k => units[k]).sort((a,b) => b.n - a.n || a.nombre.localeCompare(b.nombre,'es'));
 }
 // mezcla un color con blanco (html2canvas no soporta color-mix)
@@ -988,12 +1024,17 @@ function pageServices(R, n){
   // mapa + cuadro de centros por provincia o distrito
   const units = unitStats(R);
   const map = mapSvg(R, units);
-  const unitName = isNat(R) ? 'Región' : byProvView(R) ? 'Provincia' : 'Distrito';
+  const M = mapMode(R);
+  const unitName = isNat(R) ? 'Región' : M.mode === 'prov' ? 'Provincia' : M.mode === 'zona' ? 'Zona' : 'Distrito';
   const sideRows = units.map(u => `<tr${R._tipo === 'Distrito' && u.key === R._dk ? ' class="hi"' : ''}><td>${esc(u.nombre)}</td><td class="n"><span class="dot" style="background:${blueOf(u.n, units[0] ? units[0].n : 1)}"></span>${u.n}</td>
       <td class="chips">${Object.entries(u.svc).map(([sv, k]) => `<span class="chip">${symbolSvg(sv)}${k}</span>`).join('')}</td></tr>`).join('');
   const side = units.length ? `<div class="side${units.length > 18 ? ' dense' : ''}"><table class="sidet"><thead><tr><th>${unitName}</th><th class="n">Centros</th><th>Servicios</th></tr></thead><tbody>${sideRows}</tbody></table></div>` : '';
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
-  const cap = isNat(R) ? 'Centros por región · Perú' : R._tipo === 'Región' ? `Centros por ${byProvView(R) ? 'provincia' : 'distrito'} · Región ${esc(R.region)}` : `Centros por distrito · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`;
+  const cap = isNat(R) ? 'Centros por región · Perú'
+    : M.mode === 'zona' ? `Centros por zona · ${R._tipo === 'Región' ? 'Región ' + esc(R.region) : 'Provincia ' + esc(R._nombre)}`
+    : M.zona ? `Centros por distrito · ${esc(M.zona)}`
+    : R._tipo === 'Región' ? `Centros por ${byProvView(R) ? 'provincia' : 'distrito'} · Región ${esc(R.region)}` : `Centros por distrito · Provincia ${esc(R._tipo === 'Provincia' ? R._nombre : R._prov)}`;
+  const zonePages = M.mode === 'zona' ? Object.keys(zonasDe(M.pk)).map((z, i) => pageZone(R, z, n + 1 + i)).join('') : '';
 
   const head = `<div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>${kpis}</div>`;
   const tables = list.length ? `<div class="svc-tables">${tableOf(blocks.slice(0, cut))}${tableOf(blocks.slice(cut))}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`;
@@ -1003,14 +1044,35 @@ function pageServices(R, n){
   if (isNat(R) || units.length > 20) return `<section class="page nat">${band(R)}<div class="page-body">${head}
       ${map ? `<div class="map-cap"><span>${cap}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
     </div>${footer(R,n)}</section>
-    <section class="page">${band(R)}<div class="page-body"><div><span class="h2">Servicios MIMP implementados por tipo${has(R.periodo)?' (*)':''}</span></div>${tables}${notes}</div>${footer(R,n+1)}</section>`;
+    <section class="page">${band(R)}<div class="page-body"><div><span class="h2">Servicios MIMP implementados por tipo${has(R.periodo)?' (*)':''}</span></div>${tables}${notes}</div>${footer(R,n+1)}</section>` + zonePages;
   return `<section class="page">${band(R)}<div class="page-body">
     ${head}
     ${map ? `<div class="map-cap"><span>${cap}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
-    ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito de ${esc(R._nombre)} aparece con borde oscuro dentro de la provincia de ${esc(R._prov)}.</div>` : ''}
+    ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito de ${esc(R._nombre)} aparece con borde oscuro dentro de ${M.zona ? esc(M.zona) : 'la provincia de ' + esc(R._prov)}.</div>` : ''}
+    ${M.mode === 'zona' ? `<div class="note">En las páginas siguientes se muestra cada zona por distrito.</div>` : ''}
     ${isSub(R) && !rows.some(s => s.at != null) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
     ${list.length ? `<div class="svc-tables">${tableOf(blocks.slice(0, cut))}${tableOf(blocks.slice(cut))}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
     ${empty.length ? `<p class="empty-cats"><b>Sin centros:</b> ${esc(empty.join(', '))}.</p>` : ''}
+    ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
+  </div>${footer(R,n)}</section>` + zonePages;
+}
+// Una página por zona (Lima Norte, Este, Centro, Sur): mapa distrital ampliado y cuadro
+function pageZone(R, zona, n){
+  const Z = { ...R, _zona: zona };
+  const units = unitStats(Z), map = mapSvg(Z, units);
+  const pk = viewPk(R), list = zonasDe(pk)[zona] || [];
+  const nameOf = dk => { const d = (R._region._subs[pk] || { dists:{} }).dists[dk]; const g = GEOMS.find(x => String(x.properties.IDDIST) === dk);
+    return titleCase((d && d.nombre) || (g && (GEO_NOMBRES[g.properties.NOMBDIST] || g.properties.NOMBDIST)) || dk); };
+  const sin = list.filter(dk => !units.some(u => u.key === dk)).map(nameOf).sort((a,b) => a.localeCompare(b,'es'));
+  const nCent = units.reduce((a,u) => a + u.n, 0), max = units[0] ? units[0].n : 1;
+  const rows = units.map(u => `<tr><td>${esc(u.nombre)}</td><td class="n"><span class="dot" style="background:${blueOf(u.n, max)}"></span>${u.n}</td>
+      <td class="chips">${Object.entries(u.svc).map(([sv, k]) => `<span class="chip">${symbolSvg(sv)}${k}</span>`).join('')}</td></tr>`).join('');
+  const side = `<div class="side${units.length > 18 ? ' dense' : ''}">${units.length ? `<table class="sidet"><thead><tr><th>Distrito</th><th class="n">Centros</th><th>Servicios</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No hay centros en esta zona.</p>'}
+      ${sin.length ? `<p class="empty-cats" style="margin-top:3mm"><b>Distritos sin centros:</b> ${esc(sin.join(', '))}.</p>` : ''}</div>`;
+  const kpis = `<div class="kpis"><div class="kpi"><b>${fmtN(nCent)}</b><span>centros</span></div><div class="kpi"><b>${units.length}</b><span>de ${list.length} distritos con centros</span></div></div>`;
+  return `<section class="page nat">${band(R)}<div class="page-body">
+    <div class="svc-top"><div><span class="h2">${esc(zona)}</span></div>${kpis}</div>
+    ${map ? `<div class="map-cap"><span>Centros por distrito · ${esc(zona)}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
   </div>${footer(R,n)}</section>`;
 }
@@ -1041,6 +1103,8 @@ async function loadMap(){
     GEOMS = TOPO.objects[key].geometries;
   }catch(e){ TOPO = null; MAP_ERR = e.message; console.warn('Mapa:', e); }
 }
+// nombres antiguos del archivo de límites
+const GEO_NOMBRES = { 'MAGDALENA VIEJA': 'PUEBLO LIBRE' };
 const titleCase = s => (s||'').toLowerCase().replace(/(^|[\s(-])([a-záéíóúñü])/g, (m,a,b) => a + b.toUpperCase()).replace(/\b(De|Del|La|Las|Los|Y|El)\b/g, w => w.toLowerCase()).replace(/^./, c => c.toUpperCase());
 function mapNational(units){
   const count = {}; units.forEach(u => count[u.key] = u.n);
@@ -1079,10 +1143,10 @@ function mapNational(units){
 function mapSvg(R, units){
   if (!TOPO) return '';
   if (isNat(R)) return mapNational(units || unitStats(R));
-  const Rg = R._region;
-  const regionView = byProvView(R), pkV = viewPk(R);
+  const Rg = R._region, M = mapMode(R);
+  const regionView = M.mode === 'prov', zoneView = M.mode === 'zona', pkV = viewPk(R);
   const provs = new Set(regionView ? Rg._subOrder.filter(k => /^\d{4}$/.test(k)) : [pkV]);
-  const geoms = GEOMS.filter(g => provs.has(String(g.properties.IDPROV)));
+  const geoms = GEOMS.filter(g => provs.has(String(g.properties.IDPROV)) && (!M.dists || M.dists.has(String(g.properties.IDDIST))));
   if (!geoms.length) return '';
   units = units || unitStats(R);
   const count = {}; units.forEach(u => count[u.key] = u.n);
@@ -1097,9 +1161,14 @@ function mapSvg(R, units){
   const zones = regionView
     ? [...provs].map(pk => { const g = geoms.filter(x => String(x.properties.IDPROV) === pk); if (!g.length) return null;
         return { key: pk, geo: topojson.merge(TOPO, g), name: titleCase((Rg._subs[pk] && Rg._subs[pk].nombre) || g[0].properties.NOMBPROV) }; }).filter(Boolean)
+    : zoneView
+    ? Object.entries(zonasDe(pkV)).map(([z, list]) => { const g = geoms.filter(x => list.includes(String(x.properties.IDDIST))); return g.length ? { key: z, geo: topojson.merge(TOPO, g), name: z } : null; }).filter(Boolean)
     : fc.features.map(f => { const k = String(f.properties.IDDIST); const known = (Rg._subs[pkV] || { dists:{} }).dists[k];
-        return { key: k, geo: f, name: titleCase((known && known.nombre) || f.properties.NOMBDIST) }; });
-  const fills = zones.map(z => `<path d="${path(z.geo)}" fill="${blueOf(count[z.key] || 0, max)}" stroke="#FFFFFF" stroke-width="${regionView ? 2 : 1.2}" stroke-linejoin="round"/>`).join('');
+        return { key: k, geo: f, name: titleCase((known && known.nombre) || GEO_NOMBRES[f.properties.NOMBDIST] || f.properties.NOMBDIST) }; });
+  zones.splice(0, zones.length, ...zones.filter(z => path(z.geo)));   // geometrías vacías del archivo
+  const fills = zones.map(z => `<path d="${path(z.geo)}" fill="${blueOf(count[z.key] || 0, max)}" stroke="#FFFFFF" stroke-width="${regionView || zoneView ? 2.4 : 1.2}" stroke-linejoin="round"/>`).join('');
+  // en la vista por zonas se dibujan también los límites distritales, tenues
+  const distLines = zoneView ? `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a !== b))}" fill="none" stroke="#FFFFFF" stroke-width=".7" stroke-opacity=".75"/>` : '';
   const hi = R._tipo === 'Distrito' ? zones.find(z => z.key === R._dk) : null;
   const hiLine = hi ? `<path d="${path(hi.geo)}" fill="none" stroke="#1F2430" stroke-width="2.6" stroke-linejoin="round"/>` : '';
   const outline = `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a === b))}" fill="none" stroke="#B9C2CE" stroke-width="1"/>`;
@@ -1107,8 +1176,8 @@ function mapSvg(R, units){
   const marks = zones.map(z => {
     const [x, y] = path.centroid(z.geo); if (isNaN(x)) return '';
     const area = path.area(z.geo), v = count[z.key] || 0;
-    const showName = area > (regionView ? 1500 : 2200);
-    const fs = regionView ? 16 : (zones.length > 30 ? 12 : 14);
+    const showName = zoneView || area > (regionView ? 1500 : 2200);
+    const fs = zoneView ? 19 : regionView ? 16 : (zones.length > 30 ? 12 : 14);
     const nameEl = showName ? `<text x="${x.toFixed(1)}" y="${(y + (v ? 32 : 5)).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${fs}" font-weight="600" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="3" stroke-linejoin="round" opacity=".9">${esc(z.name)}</text><text x="${x.toFixed(1)}" y="${(y + (v ? 32 : 5)).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="${fs}" font-weight="600" fill="#4B5462">${esc(z.name)}</text>` : '';
     const bub = v ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${v > 9 ? 17 : 14}" fill="#FFFFFF" stroke="#1F5FA8" stroke-width="2"/><text x="${x.toFixed(1)}" y="${(y + 5.5).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="16" font-weight="800" fill="#1F5FA8">${v}</text>` : '';
     return bub + nameEl;
@@ -1119,7 +1188,7 @@ function mapSvg(R, units){
     `<rect x="${lx}" y="${ly}" width="22" height="14" fill="#EEF0F3" stroke="#D5DAE1" stroke-width=".8"/><text x="${lx + 27}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">0</text>` +
     BLUES.map((c, i) => `<rect x="${lx + 50 + i * 26}" y="${ly}" width="26" height="14" fill="${c}"/>`).join('') +
     `<text x="${lx + 50 + BLUES.length * 26 + 6}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">${max}</text>`;
-  return `<svg class="geo" preserveAspectRatio="xMidYMin meet" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros">${fills}${outline}${hiLine}${marks}</svg>`;
+  return `<svg class="geo" preserveAspectRatio="xMidYMin meet" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros">${fills}${distLines}${outline}${hiLine}${marks}</svg>`;
 }
 
 // ── Página 5: distribución territorial de los servicios ──
@@ -1194,23 +1263,22 @@ function pageDirectory(R, n){
   const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
   rows.forEach(r => { r.cat = categoryOf(r); if (!cats.includes(r.cat)) cats.push(r.cat); });
   rows.sort((a,b) => cats.indexOf(a.cat) - cats.indexOf(b.cat) || a.servicio.localeCompare(b.servicio,'es') || a.prov.localeCompare(b.prov,'es') || a.dist.localeCompare(b.dist,'es') || a.nombre.localeCompare(b.nombre,'es'));
-  const showUb = R._tipo !== 'Distrito';
-  const ub = r => R._tipo === 'Región' ? `${esc(titleCase(r.dist))}<br><span class="muted">${esc(titleCase(r.prov))}</span>` : esc(titleCase(r.dist));
-  const ncol = showUb ? 5 : 4;
+  const ncol = 8;
   const count = f => rows.filter(f).length;
+  const cel = v => has(v) ? esc(v) : '<span class="muted">—</span>';
   let body = '', lastC = null, lastS = null;
   rows.forEach(r => {
     if (r.cat !== lastC){ lastC = r.cat; lastS = null; const cfg = CONFIG.CATEGORIAS.find(c => c.nombre === r.cat) || {};
       body += `<tr class="cat"><td colspan="${ncol}">${icon(cfg.icono,'ic-h')}${esc(r.cat.replace(/^En /,'').replace(/^./, c => c.toUpperCase()))} <span class="muted">(${count(x => x.cat === r.cat)})</span></td></tr>`; }
     if (r.servicio !== lastS){ lastS = r.servicio;
       body += `<tr class="svc"><td colspan="${ncol}"><span class="sv">${symbolSvg(r.servicio)}<span>${esc(r.servicio)} <span class="muted">(${count(x => x.cat === r.cat && x.servicio === r.servicio)})</span></span></span></td></tr>`; }
-    body += `<tr><td><b>${esc(r.nombre)}</b></td>${showUb ? `<td>${ub(r)}</td>` : ''}<td>${esc(r.dir)}</td><td>${esc(r.coord)}</td><td>${r.tel ? esc(r.tel) : (r.correo ? '' : '<span class="muted">—</span>')}${r.correo ? `${r.tel ? '<br>' : ''}<span class="mail">${esc(r.correo)}</span>` : ''}</td></tr>`;
+    body += `<tr><td><b>${esc(r.nombre)}</b></td><td>${cel(regionName(r.reg) || titleCase(r.dep))}</td><td>${cel(titleCase(r.prov))}</td><td>${cel(titleCase(r.dist))}</td><td>${cel(r.dir)}</td><td>${cel(r.coord)}</td><td class="nowrap">${cel(r.tel)}</td><td class="mail">${cel(r.correo)}</td></tr>`;
   });
   const lugar = R._tipo === 'Región' ? 'la región' : R._tipo === 'Provincia' ? 'la provincia' : 'el distrito';
-  return `<section class="page dir">${band(R)}<div class="page-body">
+  return `<section class="page dir land">${band(R)}<div class="page-body">
     <div class="dir-intro"><span class="h2">Directorio de servicios</span><p class="muted" style="margin-top:2mm;font-size:8.5pt">${rows.length} centros de atención en ${lugar}.</p></div>
-    <table class="dirt"><colgroup><col style="width:${showUb?20:24}%">${showUb ? '<col style="width:14%">' : ''}<col style="width:${showUb?30:36}%"><col style="width:${showUb?18:20}%"><col style="width:${showUb?18:20}%"></colgroup>
-      <thead><tr><th>Centro de atención</th>${showUb ? `<th>${R._tipo === 'Región' ? 'Distrito / provincia' : 'Distrito'}</th>` : ''}<th>Dirección</th><th>Coordinador/a</th><th>Contacto</th></tr></thead>
+    <table class="dirt"><colgroup><col style="width:15%"><col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:22%"><col style="width:14%"><col style="width:7%"><col style="width:16%"></colgroup>
+      <thead><tr><th>Centro de atención</th><th>Departamento</th><th>Provincia</th><th>Distrito</th><th>Dirección</th><th>Coordinador/a</th><th>Celular</th><th>Correo</th></tr></thead>
       <tbody>${body}</tbody></table>
   </div>${footer(R,n)}</section>`;
 }
@@ -1285,12 +1353,14 @@ function waitImages(root){
 }
 async function pagesToPdf(root){
   await document.fonts.ready; await waitImages(root);
-  const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:'mm', format:'a4', compress:true});
+  const { jsPDF } = window.jspdf;
   const pages = [...root.querySelectorAll('.page')];
+  const land = p => p.classList.contains('land');
+  const pdf = new jsPDF({unit:'mm', format:'a4', orientation: pages[0] && land(pages[0]) ? 'l' : 'p', compress:true});
   for (let i=0;i<pages.length;i++){
     const canvas = await html2canvas(pages[i], {scale:2, useCORS:true, backgroundColor:'#ffffff', logging:false});
-    if(i) pdf.addPage();
-    pdf.addImage(canvas.toDataURL('image/jpeg', .92), 'JPEG', 0, 0, 210, 297);
+    if(i) pdf.addPage('a4', land(pages[i]) ? 'l' : 'p');
+    pdf.addImage(canvas.toDataURL('image/jpeg', .92), 'JPEG', 0, 0, land(pages[i]) ? 297 : 210, land(pages[i]) ? 210 : 297);
   }
   return pdf;
 }
