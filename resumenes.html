@@ -31,6 +31,9 @@ body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-
 .ctrl select{height:40px;min-width:220px;padding:0 12px;border:1px solid #D5DAE1;border-radius:10px;font:600 14px var(--sans);color:var(--ink);background:#fff}
 .btn{height:40px;padding:0 16px;border-radius:10px;border:1px solid #D5DAE1;background:#fff;color:var(--violet);font:600 13.5px var(--sans);cursor:pointer;white-space:nowrap}
 .btn:hover{border-color:var(--violet)}
+.zoom{display:inline-flex;gap:4px;margin-left:auto}
+.zoom .zb{width:40px;padding:0;font-size:20px;line-height:1}
+.zoom .zv{min-width:64px;padding:0 8px;font-variant-numeric:tabular-nums}
 .btn.primary{background:var(--red);border-color:var(--red);color:#fff}
 .btn.primary:hover{background:var(--red-dk)}
 .btn:disabled{opacity:.5;cursor:wait}
@@ -44,7 +47,7 @@ label.btn{display:inline-flex;align-items:center}
 .status.err{background:#FDECEE;border-color:#F4C7CE;color:var(--red-dk)}
 .progress{height:3px;background:var(--red);width:0;transition:width .2s}
 
-.viewer{padding:28px 16px 60px;display:flex;flex-direction:column;align-items:center;gap:24px;overflow-x:auto}
+.viewer{padding:28px 16px 60px;display:flex;flex-direction:column;align-items:center;align-items:safe center;gap:24px;overflow-x:auto}
 #offscreen{position:fixed;left:-10000px;top:0}
 
 /* ── Página A4 ── */
@@ -169,7 +172,7 @@ label.btn{display:inline-flex;align-items:center}
 .kpi-pair .v{font-size:13pt;font-weight:800;color:var(--violet)}
 .kpi-pair .l{font-size:8.5pt;color:var(--ink-2)}
 .dirt{width:100%;border-collapse:collapse;table-layout:fixed;font-size:7pt;line-height:1.3}
-.dirt th{background:#EEEAF8;color:var(--violet);text-align:left;font-weight:700;padding:1.4mm 1.5mm;font-size:7pt}
+.dirt th{background:none;color:var(--ink-3);text-align:left;font-weight:700;font-size:6.8pt;text-transform:uppercase;letter-spacing:.03em;padding:1.2mm 1.5mm;border-bottom:.3mm solid var(--line)}
 .dirt td{padding:1.3mm 1.5mm;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
 .dirt tr.cat td{background:var(--violet);color:#fff;font-weight:700;font-size:8pt;padding:1.6mm 1.5mm}
 .dirt tr.cat .muted{color:#D9D3F5}
@@ -212,6 +215,9 @@ label.btn{display:inline-flex;align-items:center}
 .page.land .band{font-size:17pt;padding:3mm 0}
 .page.land .page-body{padding:6mm 11mm 4mm;gap:3mm}
 .dirt td.nowrap{white-space:nowrap}
+.map-row.zr{grid-template-columns:1.6fr 1fr;max-height:112mm}
+.page.zp .map-row{max-height:96mm;min-height:60mm}
+.page.zp .svc-tables{margin-top:1mm}
 .page.nat .map-row{max-height:none;min-height:0;flex:1 1 0;grid-template-columns:1.35fr 1fr}
 .page.nat .sidet{font-size:7pt}
 .svct td{padding:1.1mm 1.6mm;border-bottom:1px solid #F0F2F5;background:#fff;vertical-align:middle}
@@ -251,7 +257,7 @@ hr.sep{border:none;border-top:1px solid var(--line)}
   @page{size:A4;margin:0}
   body{background:#fff}
   .bar,.status,.progress{display:none!important}
-  .viewer{padding:0;gap:0;display:block}
+  .viewer{padding:0;gap:0;display:block;zoom:1!important}
   .page{box-shadow:none;break-after:page}
   @page land{size:A4 landscape;margin:0}
   .page.land{page:land}
@@ -277,6 +283,11 @@ hr.sep{border:none;border-top:1px solid var(--line)}
     <button class="btn primary" id="btnPdf" disabled>Descargar PDF</button>
     <button class="btn" id="btnZip" disabled>Todas las regiones (ZIP)</button>
     <button class="btn" id="btnPrint" disabled>Imprimir</button>
+    <div class="zoom" role="group" aria-label="Zoom de la vista previa">
+      <button class="btn zb" id="zOut" title="Alejar" aria-label="Alejar">−</button>
+      <button class="btn zv" id="zReset" title="Volver al 100%">100%</button>
+      <button class="btn zb" id="zIn" title="Acercar" aria-label="Acercar">+</button>
+    </div>
   </div>
 </header>
 <div class="progress" id="progress"></div>
@@ -970,9 +981,8 @@ function mapLegend(units){
   const max = Math.max(1, ...units.map(u => u.n));
   return `<span class="mleg"><span class="mleg-t">N° de centros</span><i style="background:#EEF0F3;border:1px solid #D5DAE1"></i><span>0</span>${BLUES.map(c => `<i style="background:${c}"></i>`).join('')}<span>${max}</span></span>`;
 }
-function pageServices(R, n){
-  const rows = servRows(R);
-  if (rows === null) return '';
+// Tablas de servicios por categoría (se usan en la región/provincia/distrito y en cada zona)
+function svcTables(rows){
   const list = groupServices(rows);
   const cats = [...CONFIG.CATEGORIAS.map(c => c.nombre), CONFIG.OTROS];
   list.forEach(s => { if (!cats.includes(s.cat)) cats.push(s.cat); });
@@ -1014,6 +1024,14 @@ function pageServices(R, n){
   const tableOf = bl => bl.length ? `<table class="svct"><colgroup><col><col style="width:12mm"><col style="width:15mm"><col style="width:14mm"></colgroup>
     <thead><tr><th>Servicio</th><th class="n">Centros</th><th class="n">Pob. atendida</th><th class="n">Pob. actual</th></tr></thead>${bl.map(b => b.html).join('')}</table>` : '<div></div>';
 
+  const html = list.length ? `<div class="svc-tables">${tableOf(blocks.slice(0, cut))}${tableOf(blocks.slice(cut))}</div>` : '';
+  return { list, empty, sumAt, html };
+}
+function pageServices(R, n){
+  const rows = servRows(R);
+  if (rows === null) return '';
+  const { list, empty, sumAt, html: tablesHtml } = svcTables(rows);
+
   // tarjetas de totales
   const nCent = list.reduce((a,s)=>a+s.n,0), atTot = sumAt(list);
   const kpis = `<div class="kpis">
@@ -1037,7 +1055,7 @@ function pageServices(R, n){
   const zonePages = M.mode === 'zona' ? Object.keys(zonasDe(M.pk)).map((z, i) => pageZone(R, z, n + 1 + i)).join('') : '';
 
   const head = `<div class="svc-top"><div><span class="h2">Servicios MIMP implementados${has(R.periodo)?' (*)':''}</span></div>${kpis}</div>`;
-  const tables = list.length ? `<div class="svc-tables">${tableOf(blocks.slice(0, cut))}${tableOf(blocks.slice(cut))}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`;
+  const tables = tablesHtml || `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`;
   const notes = `${empty.length ? `<p class="empty-cats"><b>Sin centros:</b> ${esc(empty.join(', '))}.</p>` : ''}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}`;
   // nacional: el mapa con su cuadro en una página y las tablas en la siguiente
@@ -1047,11 +1065,11 @@ function pageServices(R, n){
     <section class="page">${band(R)}<div class="page-body"><div><span class="h2">Servicios MIMP implementados por tipo${has(R.periodo)?' (*)':''}</span></div>${tables}${notes}</div>${footer(R,n+1)}</section>` + zonePages;
   return `<section class="page">${band(R)}<div class="page-body">
     ${head}
-    ${map ? `<div class="map-cap"><span>${cap}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
+    ${map ? `<div class="map-cap"><span>${cap}</span>${mapLegend(units)}</div><div class="map-row${M.mode === 'zona' ? ' zr' : ''}"><div class="map map-geo">${map}</div>${side}</div>` : side}
     ${R._tipo === 'Distrito' && map ? `<div class="note">El distrito de ${esc(R._nombre)} aparece con borde oscuro dentro de ${M.zona ? esc(M.zona) : 'la provincia de ' + esc(R._prov)}.</div>` : ''}
     ${M.mode === 'zona' ? `<div class="note">En las páginas siguientes se muestra cada zona por distrito.</div>` : ''}
     ${isSub(R) && !rows.some(s => s.at != null) ? `<div class="lvl-note">Cantidad de centros en ${lugar}. Las atenciones están disponibles solo a nivel regional (${esc(R.region)}).</div>` : ''}
-    ${list.length ? `<div class="svc-tables">${tableOf(blocks.slice(0, cut))}${tableOf(blocks.slice(cut))}</div>` : `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
+    ${tablesHtml || `<p class="muted">No hay servicios MIMP implementados en ${lugar}.</p>`}
     ${empty.length ? `<p class="empty-cats"><b>Sin centros:</b> ${esc(empty.join(', '))}.</p>` : ''}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
   </div>${footer(R,n)}</section>` + zonePages;
@@ -1069,10 +1087,14 @@ function pageZone(R, zona, n){
       <td class="chips">${Object.entries(u.svc).map(([sv, k]) => `<span class="chip">${symbolSvg(sv)}${k}</span>`).join('')}</td></tr>`).join('');
   const side = `<div class="side${units.length > 18 ? ' dense' : ''}">${units.length ? `<table class="sidet"><thead><tr><th>Distrito</th><th class="n">Centros</th><th>Servicios</th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">No hay centros en esta zona.</p>'}
       ${sin.length ? `<p class="empty-cats" style="margin-top:3mm"><b>Distritos sin centros:</b> ${esc(sin.join(', '))}.</p>` : ''}</div>`;
-  const kpis = `<div class="kpis"><div class="kpi"><b>${fmtN(nCent)}</b><span>centros</span></div><div class="kpi"><b>${units.length}</b><span>de ${list.length} distritos con centros</span></div></div>`;
-  return `<section class="page nat">${band(R)}<div class="page-body">
+  const zrows = (servRows({ ...R, _dk: '' }) || []).filter(s => list.includes(s.dk));
+  const T = svcTables(zrows);
+  const kpis = `<div class="kpis"><div class="kpi"><b>${fmtN(T.list.length)}</b><span>servicios MIMP</span></div><div class="kpi"><b>${fmtN(nCent)}</b><span>centros</span></div><div class="kpi"><b>${units.length}</b><span>de ${list.length} distritos con centros</span></div></div>`;
+  return `<section class="page zp">${band(R)}<div class="page-body">
     <div class="svc-top"><div><span class="h2">${esc(zona)}</span></div>${kpis}</div>
     ${map ? `<div class="map-cap"><span>Centros por distrito · ${esc(zona)}</span>${mapLegend(units)}</div><div class="map-row"><div class="map map-geo">${map}</div>${side}</div>` : side}
+    ${T.html}
+    ${T.empty.length ? `<p class="empty-cats"><b>Sin centros:</b> ${esc(T.empty.join(', '))}.</p>` : ''}
     ${has(R.periodo) ? `<div class="note">(*) Corte ${esc(R.periodo)} - Fuente: ${esc(fuente('servicios'))}</div>` : ''}
   </div>${footer(R,n)}</section>`;
 }
@@ -1151,11 +1173,12 @@ function mapSvg(R, units){
   units = units || unitStats(R);
   const count = {}; units.forEach(u => count[u.key] = u.n);
   const max = Math.max(1, ...units.map(u => u.n));
-  const W = 600, coll = { type:'GeometryCollection', geometries: geoms };
+  // en la vista por zonas se deja espacio a los lados para las etiquetas con flecha
+  const pad = zoneView ? 175 : 10, W = zoneView ? 740 : 600, coll = { type:'GeometryCollection', geometries: geoms };
   const fc = topojson.feature(TOPO, coll);
-  const b0 = d3.geoPath(d3.geoMercator().fitWidth(W, fc)).bounds(fc);
-  const H = Math.round(Math.min(Math.max(W * (b0[1][1] - b0[0][1]) / Math.max(1, b0[1][0] - b0[0][0]), 420), 900));
-  const proj = d3.geoMercator().fitExtent([[10,10],[W-10,H-10]], fc);
+  const b0 = d3.geoPath(d3.geoMercator().fitWidth(W - 2 * pad, fc)).bounds(fc);
+  const H = Math.round(Math.min(Math.max((W - 2 * pad) * (b0[1][1] - b0[0][1]) / Math.max(1, b0[1][0] - b0[0][0]), 420), 900));
+  const proj = d3.geoMercator().fitExtent([[pad,10],[W-pad,H-10]], fc);
   const path = d3.geoPath(proj);
   // zonas: provincias (fusionando sus distritos) o distritos
   const zones = regionView
@@ -1173,7 +1196,7 @@ function mapSvg(R, units){
   const hiLine = hi ? `<path d="${path(hi.geo)}" fill="none" stroke="#1F2430" stroke-width="2.6" stroke-linejoin="round"/>` : '';
   const outline = `<path d="${path(topojson.mesh(TOPO, coll, (a,b) => a === b))}" fill="none" stroke="#B9C2CE" stroke-width="1"/>`;
   // número de centros en un círculo y nombre debajo (se omite el nombre en zonas muy pequeñas)
-  const marks = zones.map(z => {
+  const marks = zoneView ? '' : zones.map(z => {
     const [x, y] = path.centroid(z.geo); if (isNaN(x)) return '';
     const area = path.area(z.geo), v = count[z.key] || 0;
     const showName = zoneView || area > (regionView ? 1500 : 2200);
@@ -1182,13 +1205,33 @@ function mapSvg(R, units){
     const bub = v ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${v > 9 ? 17 : 14}" fill="#FFFFFF" stroke="#1F5FA8" stroke-width="2"/><text x="${x.toFixed(1)}" y="${(y + 5.5).toFixed(1)}" text-anchor="middle" font-family="Public Sans, Arial" font-size="16" font-weight="800" fill="#1F5FA8">${v}</text>` : '';
     return bub + nameEl;
   }).join('');
+  const callouts = zoneView ? zoneCallouts(zones, path, count, W, H, pad) : '';
   // (la leyenda de colores va en HTML, debajo del título del mapa)
   const lx = 14, ly = H - 26;
   const legend = `<text x="${lx}" y="${ly - 8}" font-family="Public Sans, Arial" font-size="14" fill="#7A8392">N° de centros</text>` +
     `<rect x="${lx}" y="${ly}" width="22" height="14" fill="#EEF0F3" stroke="#D5DAE1" stroke-width=".8"/><text x="${lx + 27}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">0</text>` +
     BLUES.map((c, i) => `<rect x="${lx + 50 + i * 26}" y="${ly}" width="26" height="14" fill="${c}"/>`).join('') +
     `<text x="${lx + 50 + BLUES.length * 26 + 6}" y="${ly + 12}" font-family="Public Sans, Arial" font-size="13" fill="#7A8392">${max}</text>`;
-  return `<svg class="geo" preserveAspectRatio="xMidYMin meet" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros">${fills}${distLines}${outline}${hiLine}${marks}</svg>`;
+  return `<svg class="geo" preserveAspectRatio="xMidYMin meet" viewBox="0 0 ${W} ${H}" role="img" aria-label="Mapa de centros">${fills}${distLines}${outline}${hiLine}${marks}${callouts}</svg>`;
+}
+// Etiquetas de zona fuera del mapa, unidas con una flecha a su zona
+function zoneCallouts(zones, path, count, W, H, pad){
+  const id = 'ar' + Math.random().toString(36).slice(2, 8);
+  const pts = zones.map(z => { const [x, y] = path.centroid(z.geo); return { z, x, y, v: count[z.key] || 0 }; }).filter(p => !isNaN(p.x));
+  const mid = W / 2, gap = 70;
+  const place = arr => { arr.sort((a,b) => a.y - b.y); let last = -1e9;
+    arr.forEach(p => { p.ly = Math.max(p.y, last + gap, 40); last = p.ly; });
+    const over = last - (H - 30); if (over > 0) arr.forEach(p => p.ly -= over); };
+  const left = pts.filter(p => p.x < mid), right = pts.filter(p => p.x >= mid);
+  place(left); place(right);
+  const lab = (p, side) => {
+    const tx = side === 'l' ? 6 : W - 6, anchor = side === 'l' ? 'start' : 'end', lx = side === 'l' ? pad - 12 : W - pad + 12;
+    return `<line x1="${lx}" y1="${p.ly.toFixed(1)}" x2="${p.x.toFixed(1)}" y2="${p.y.toFixed(1)}" stroke="#1F2430" stroke-width="1.6" marker-end="url(#${id})"/>
+      <text x="${tx}" y="${(p.ly - 6).toFixed(1)}" text-anchor="${anchor}" font-family="Public Sans, Arial" font-size="23" font-weight="700" fill="#3B2F7F">${esc(p.z.name)}</text>
+      <text x="${tx}" y="${(p.ly + 22).toFixed(1)}" text-anchor="${anchor}" font-family="Public Sans, Arial" font-size="21" fill="#4B5462"><tspan font-weight="800" fill="#1F5FA8">${p.v}</tspan> centros</text>`;
+  };
+  return `<defs><marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1F2430"/></marker></defs>` +
+    left.map(p => lab(p, 'l')).join('') + right.map(p => lab(p, 'r')).join('');
 }
 
 // ── Página 5: distribución territorial de los servicios ──
@@ -1357,11 +1400,14 @@ async function pagesToPdf(root){
   const pages = [...root.querySelectorAll('.page')];
   const land = p => p.classList.contains('land');
   const pdf = new jsPDF({unit:'mm', format:'a4', orientation: pages[0] && land(pages[0]) ? 'l' : 'p', compress:true});
+  const z0 = root.style.zoom; root.style.zoom = 1;   // el zoom de la vista previa no afecta al PDF
+  try {
   for (let i=0;i<pages.length;i++){
     const canvas = await html2canvas(pages[i], {scale:2, useCORS:true, backgroundColor:'#ffffff', logging:false});
     if(i) pdf.addPage('a4', land(pages[i]) ? 'l' : 'p');
     pdf.addImage(canvas.toDataURL('image/jpeg', .92), 'JPEG', 0, 0, land(pages[i]) ? 297 : 210, land(pages[i]) ? 210 : 297);
   }
+  } finally { root.style.zoom = z0; }
   return pdf;
 }
 function saveBlob(blob, name){ const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); }, 1500); }
@@ -1398,6 +1444,14 @@ async function downloadAll(){
   $('btnPdf').addEventListener('click', downloadOne);
   $('btnZip').addEventListener('click', downloadAll);
   $('btnPrint').addEventListener('click', () => window.print());
+  // zoom de la vista previa (no cambia el PDF)
+  let zoom = 1; try { zoom = Number(localStorage.getItem('resumenZoom')) || 1; } catch(e){}
+  const setZoom = z => { zoom = Math.min(2, Math.max(.5, Math.round(z * 10) / 10)); $('viewer').style.zoom = zoom; $('zReset').textContent = Math.round(zoom * 100) + '%';
+    try { localStorage.setItem('resumenZoom', zoom); } catch(e){} };
+  $('zIn').addEventListener('click', () => setZoom(zoom + .1));
+  $('zOut').addEventListener('click', () => setZoom(zoom - .1));
+  $('zReset').addEventListener('click', () => setZoom(1));
+  setZoom(zoom);
   status('Cargando datos del Google Sheet…');
   try{
     const [failed] = await Promise.all([loadData(), loadMap()]);
